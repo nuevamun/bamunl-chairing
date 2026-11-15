@@ -1,0 +1,16 @@
+---
+import Base from '../layouts/Base.astro';
+---
+<Base title="Sign in">
+  <main class="wrap page">
+    <div class="lead"><h1 class="title">sign in</h1></div>
+    <form id="f" class="card form" style="max-width:26rem;margin-inline:auto;width:100%">
+      <p id="err" class="flash flash--err" role="alert" hidden></p>
+      <label class="field"><span>Username</span><input type="text" name="email" required autocomplete="username" autocapitalize="none" spellcheck="false" /></label>
+      <label class="field"><span>Password</span><input type="password" name="password" required autocomplete="current-password" /></label>
+      <button class="btn btn--primary">Sign in</button>
+      <button type="button" id="out" class="btn btn--ghost" hidden>Sign out</button>
+    </form>
+  </main>
+  <script>import '../scripts/login';</script>
+</Base>

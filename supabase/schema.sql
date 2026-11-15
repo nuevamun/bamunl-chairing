@@ -1,0 +1,2 @@
+-- Superseded. Chairing now lives in the league Supabase project so admin logins work.
+-- The tables are in league-admin/supabase/migration-012-chairing.sql (not run yet).

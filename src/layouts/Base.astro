@@ -1,0 +1,36 @@
+---
+import '@fontsource/figtree/latin-400.css';
+import '@fontsource/figtree/latin-600.css';
+import '@fontsource/figtree/latin-700.css';
+import '@fontsource/figtree/latin-800.css';
+import '@fontsource/libre-baskerville/latin-400.css';
+import '@fontsource/libre-baskerville/latin-700.css';
+import '../styles/global.css';
+interface Props { title: string; bare?: boolean }
+const { title, bare = false } = Astro.props;
+---
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>{title} · BAMUNL Chairing</title>
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  </head>
+  <body class={bare ? 'bare' : ''}>
+    {!bare && (
+      <header>
+        <div class="wrap bar">
+          <a class="mark" href="/"><img src="/img/logo-168.png" alt="" width="40" height="40" /><span>BAMUNL Chairing</span></a>
+          <div id="sync" class="sync" aria-live="polite"></div>
+          <div id="bar-tools" class="bar-tools"></div>
+        </div>
+      </header>
+    )}
+    <slot />
+    {!bare && <script>import "../scripts/syncbar";</script>}
+  </body>
+</html>
