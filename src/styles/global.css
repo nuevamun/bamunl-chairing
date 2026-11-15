@@ -339,3 +339,23 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
 button.motion-btn { font: inherit; font-weight: 700; font-size: .9375rem; padding: .5rem 1rem; border: 2px solid var(--twilight); border-radius: 999px; background: var(--paper); color: var(--twilight); cursor: pointer; }
 button.motion-btn:hover, button.motion-btn.motion-btn--on { background: var(--twilight); color: #fff; }
 .motion-form { margin-top: 1rem; padding: 1rem; border-left: 5px solid var(--twilight); background: var(--fog); }
+
+/* the backend veil: blurs everything behind it and holds your place */
+.veil { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 1rem; background: rgb(255 255 255 / .55); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); }
+.veil-card { background: var(--paper); border: 3px solid var(--twilight); border-radius: var(--radius); padding: 1.5rem; display: grid; gap: 1rem; min-width: min(22rem, 100%); box-shadow: 0 12px 40px rgb(20 20 60 / .2); }
+
+/* feedback: delegate list beside the open delegate */
+.fb-grid { display: grid; gap: 1.25rem; grid-template-columns: minmax(11rem, 14rem) minmax(0, 1fr); align-items: start; }
+@media (max-width: 52rem) { .fb-grid { grid-template-columns: minmax(0, 1fr); } }
+.fb-people { display: flex; flex-direction: column; gap: .4rem; }
+@media (max-width: 52rem) { .fb-people { flex-direction: row; flex-wrap: wrap; } }
+button.fb-person { font: inherit; font-weight: 600; display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; text-align: left; padding: .55rem .9rem; border: 2px solid var(--rule); border-radius: var(--radius); background: var(--paper); cursor: pointer; }
+button.fb-person:hover { border-color: var(--twilight); }
+button.fb-person--on { background: var(--twilight); border-color: var(--twilight); color: #fff; }
+button.fb-person small { font-weight: 400; opacity: .75; }
+.reminder { font-weight: 700; font-size: .875rem; color: var(--twilight); background: var(--sky); border-radius: 999px; padding: .1rem .7rem; width: fit-content; }
+p.reminder { margin: 0; }
+
+/* a combo used as a dropdown: looks like a select */
+.combo--select input { cursor: pointer; padding-right: 2.5rem; font-weight: 700; color: var(--twilight); border-color: var(--twilight); border-width: 2px; background: var(--paper); }
+.combo--select::after { content: ''; position: absolute; right: 1rem; top: 50%; width: .55rem; height: .55rem; border-right: 2px solid var(--twilight); border-bottom: 2px solid var(--twilight); transform: translateY(-70%) rotate(45deg); pointer-events: none; }

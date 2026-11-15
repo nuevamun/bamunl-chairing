@@ -9,9 +9,14 @@ export type MotionType = {
   key: string;
   label: string;
   /** What passing it does. 'none' just records it. */
-  effect: 'mod' | 'unmod' | 'speaktime' | 'close' | 'none';
+  effect: 'mod' | 'unmod' | 'roundrobin' | 'openlist' | 'votingbloc' | 'speaktime' | 'close' | 'none';
+  /** Overrides the committee's voting rule for this motion, e.g. moving into voting bloc needs two-thirds. */
+  majority?: 'simple' | 'twothirds';
   fields: MotionField[];
+  /** Asks what the motion is about. Moderated caucuses do by default. */
+  topic?: boolean;
 };
+export const hasTopic = (m: Pick<MotionType, 'effect' | 'topic'> | undefined) => m?.topic ?? m?.effect === 'mod';
 export type Config = {
   /** Seconds each speaker gets on the general speakers list. */
   speakTime: number;
@@ -23,16 +28,24 @@ export type Config = {
 export const DEFAULT_CONFIG: Config = {
   speakTime: 60,
   majority: 'simple',
+  // Most disruptive first. The order is the precedence, so the buttons and the pending list follow it.
   motions: [
-    { key: 'suspend', label: 'Suspend the meeting', effect: 'none', fields: [{ key: 'time', label: 'Time', unit: 'min', def: 0 }] },
-    { key: 'adjourn', label: 'Adjourn the meeting', effect: 'none', fields: [] },
+    { key: 'votingbloc', label: 'Move into voting bloc', effect: 'votingbloc', majority: 'twothirds', fields: [] },
     { key: 'unmod', label: 'Unmoderated caucus', effect: 'unmod', fields: [{ key: 'total', label: 'Total', unit: 'min', def: 10 }] },
-    { key: 'mod', label: 'Moderated caucus', effect: 'mod', fields: [{ key: 'total', label: 'Total', unit: 'min', def: 10 }, { key: 'per', label: 'Per speaker', unit: 's', def: 45 }] },
-    { key: 'speaktime', label: 'Change speaking time', effect: 'speaktime', fields: [{ key: 'per', label: 'Per speaker', unit: 's', def: 45 }] },
-    { key: 'close', label: 'Close the speakers list', effect: 'close', fields: [] },
+    { key: 'mod', label: 'Moderated caucus', effect: 'mod', fields: [{ key: 'total', label: 'Total', unit: 'min', def: 10 }, { key: 'per', label: 'Per speaker', unit: 's', def: 60 }] },
+    { key: 'roundrobin', label: 'Round robin', effect: 'roundrobin', fields: [{ key: 'per', label: 'Per speaker', unit: 's', def: 45 }] },
+    { key: 'openlist', label: 'Open the speakers list', effect: 'openlist', fields: [] },
     { key: 'other', label: 'Other motion', effect: 'none', fields: [{ key: 'time', label: 'Time', unit: 'min', def: 0 }] },
   ],
 };
+
+/** Motions an earlier version offered. Not shown any more, but old committees' records still use them. */
+const LEGACY_MOTIONS: MotionType[] = [
+  { key: 'suspend', label: 'Suspend the meeting', effect: 'none', fields: [{ key: 'time', label: 'Time', unit: 'min', def: 0 }] },
+  { key: 'adjourn', label: 'Adjourn the meeting', effect: 'none', fields: [] },
+  { key: 'speaktime', label: 'Change speaking time', effect: 'speaktime', fields: [{ key: 'per', label: 'Per speaker', unit: 's', def: 45 }] },
+  { key: 'close', label: 'Close the speakers list', effect: 'close', fields: [] },
+];
 
 /**
  * The motion types in precedence order, most disruptive first. Committees saved before a type existed
@@ -40,25 +53,35 @@ export const DEFAULT_CONFIG: Config = {
  */
 export function motionTypes(config: Config): MotionType[] {
   const mine = new Map(config.motions.map((m) => [m.key, m]));
-  const std = DEFAULT_CONFIG.motions.map((d) => mine.get(d.key) ?? d);
-  const own = config.motions.filter((m) => !DEFAULT_CONFIG.motions.some((d) => d.key === m.key));
+  // Standard types always use the current fields and defaults; a committee saved earlier keeps only its own tweaks.
+  const std = DEFAULT_CONFIG.motions.map((d) => ({ ...d, ...(mine.get(d.key) ?? {}), fields: d.fields }));
+  const retired = new Set(LEGACY_MOTIONS.map((m) => m.key));
+  const own = config.motions.filter((m) => !DEFAULT_CONFIG.motions.some((d) => d.key === m.key) && !retired.has(m.key));
   const other = std.filter((m) => m.key === 'other'), rest = std.filter((m) => m.key !== 'other');
   return [...rest, ...own, ...other];       // "other" is always last
 }
+/** Every type that may appear in a record: the ones on offer plus retired ones, so old committees still read correctly. */
+export function allTypes(config: Config): MotionType[] {
+  const on = motionTypes(config);
+  return [...on, ...config.motions.filter((m) => !on.some((x) => x.key === m.key)), ...LEGACY_MOTIONS.filter((m) => !on.some((x) => x.key === m.key) && !config.motions.some((x) => x.key === m.key))];
+}
+/** The rule that decides this motion: its own, else the committee's. */
+export const majorityFor = (config: Config, key: string) => allTypes(config).find((m) => m.key === key)?.majority ?? config.majority;
 
 export type Ev = { id: string; t: number; type: string; [k: string]: any };
-export type Committee = { id: string; name: string; conference: string; config: Config; delegates: Delegate[]; events: Ev[]; conferenceId?: string; /** ms; set when deleted, kept for TRASH_DAYS so it can be restored */ deletedAt?: number };
+export type Committee = { id: string; name: string; conference: string; config: Config; delegates: Delegate[]; events: Ev[]; conferenceId?: string; /** committees made now start with no speakers list; older ones keep the list they had */ needsOpen?: boolean; /** ms; set when deleted, kept for TRASH_DAYS so it can be restored */ deletedAt?: number };
 export const TRASH_DAYS = 30;
 /** A conference holds committees. Deleting one hides its committees too; restoring brings them back. */
 export type Conference = { id: string; name: string; /** the club (school) that owns it; subadmins see only their own club's, the master sees all */ schoolId?: string; deletedAt?: number };
 
 export type Attendance = 'present' | 'pv' | 'absent';
-export type Mode = { kind: 'gsl' } | { kind: 'mod'; total: number; per: number; /** null until the caucus clock starts: with the first speaker, or when the chair starts it */ startedAt: number | null; label: string; /** who proposed it, and whether they chose to speak first or last ('' = not chosen yet) */ proposer: string; slot: '' | 'first' | 'last' | 'none'; /** when they chose last, they stay at the end of the list */ lastD: string } | { kind: 'unmod'; total: number; startedAt: number; label: string };
+export type Mode = { kind: 'gsl' } | { kind: 'mod'; total: number; per: number; /** null until the caucus clock starts: with the first speaker, or when the chair starts it */ startedAt: number | null; label: string; /** what the caucus is about */ topic: string; /** who proposed it, and whether they chose to speak first or last ('' = not chosen yet) */ proposer: string; slot: '' | 'first' | 'last' | 'none'; /** when they chose last, they stay at the end of the list */ lastD: string; /** a round robin: everyone present speaks once, no caucus clock */ rr?: boolean }
+  | { kind: 'voting'; startedAt: number; label: string } | { kind: 'unmod'; total: number; startedAt: number; label: string };
 export type Speech = {
   id: string; d: string; allotted: number; used: number; left: number; over: number;
   end: 'done' | 'chair' | 'delegate' | 'questions'; to?: string; mode: 'gsl' | 'mod'; t: number;
 };
-export type Floor = { id: string; key: string; label: string; params: Record<string, number>; note: string; by: string; /** changed after it was proposed */ amended?: boolean };
+export type Floor = { id: string; key: string; label: string; params: Record<string, number>; note: string; by: string; topic?: string; /** changed after it was proposed */ amended?: boolean };
 export type MotionRecord = Floor & { yes: number; no: number; abstain: number; result: 'passed' | 'failed' | 'withdrawn'; t: number };
 export type Note = { id: string; d: string; text: string; tag: string; t: number };
 export type Score = { d: string; cat: string; v: number };
@@ -67,7 +90,8 @@ export type Speaking = { d: string; allotted: number; acc: number; since: number
 export type State = {
   attendance: Record<string, Attendance>;
   lists: { gsl: string[]; mod: string[] };
-  closed: boolean;
+  /** The general speakers list exists only once a motion has opened it. A moderated caucus has its own order of speaking. */
+  gslOpen: boolean;
   speakTime: number;
   mode: Mode;
   speaking: Speaking | null;
@@ -96,7 +120,7 @@ export function passes(majority: Config['majority'], yes: number, no: number) {
 
 export function derive(c: Committee): State {
   const s: State = {
-    attendance: {}, lists: { gsl: [], mod: [] }, closed: false, speakTime: c.config.speakTime, mode: { kind: 'gsl' },
+    attendance: {}, lists: { gsl: [], mod: [] }, gslOpen: !c.needsOpen, speakTime: c.config.speakTime, mode: { kind: 'gsl' },
     speaking: null, proposed: [], speeches: [], motions: [], notes: [], scores: [], listed: {}, eventCount: 0,
   };
   const key = (): 'gsl' | 'mod' => (s.mode.kind === 'mod' ? 'mod' : 'gsl');
@@ -124,7 +148,7 @@ export function derive(c: Committee): State {
       case 'attend': s.attendance[e.d] = e.s; break;
       case 'add': {
         const k = key();
-        if (!s.closed && !s.lists[k].includes(e.d)) { s.lists[k].push(e.d); s.listed[e.d] = (s.listed[e.d] ?? 0) + 1; }
+        if ((k === 'mod' || s.gslOpen) && !s.lists[k].includes(e.d)) { s.lists[k].push(e.d); s.listed[e.d] = (s.listed[e.d] ?? 0) + 1; }
         settle();
         break;
       }
@@ -151,9 +175,9 @@ export function derive(c: Committee): State {
       case 'resume': if (s.speaking && s.speaking.since == null) s.speaking.since = e.t; break;
       case 'stop': finish(e, e.how ?? 'done', e.to); break;
       case 'floor': {
-        const type = motionTypes(c.config).find((m) => m.key === e.key);
-        s.proposed.push({ id: e.id, key: e.key, label: (e.name && String(e.name).trim()) || type?.label || e.key, params: e.params ?? {}, note: e.note ?? '', by: e.by ?? '' });
-        const rank = (m: Floor) => { const i = motionTypes(c.config).findIndex((x) => x.key === m.key); return i < 0 ? 999 : i; };
+        const type = allTypes(c.config).find((m) => m.key === e.key);
+        s.proposed.push({ id: e.id, key: e.key, label: (e.name && String(e.name).trim()) || type?.label || e.key, params: e.params ?? {}, note: e.note ?? '', by: e.by ?? '', topic: String(e.topic ?? '').trim() });
+        const rank = (m: Floor) => { const i = allTypes(c.config).findIndex((x) => x.key === m.key); return i < 0 ? 999 : i; };
         s.proposed.sort((x, y) => rank(x) - rank(y));   // stable: same kind stays in the order proposed
         break;
       }
@@ -164,6 +188,7 @@ export function derive(c: Committee): State {
         if (e.params) f.params = { ...e.params };
         if (e.name && String(e.name).trim()) f.label = String(e.name).trim();
         if (e.by) f.by = e.by;
+        if (e.topic !== undefined) f.topic = String(e.topic).trim();
         f.amended = true;
         break;
       }
@@ -180,15 +205,27 @@ export function derive(c: Committee): State {
         // The chair says whether it passed. Counts are optional; with counts and no stated result the majority rule decides.
         const f = s.proposed.find((m) => m.id === e.target) ?? (e.target ? undefined : s.proposed[0]);
         if (!f) break;
-        const ok = e.result ? e.result === 'passed' : passes(c.config.majority, e.yes ?? 0, e.no ?? 0);
+        const ok = e.result ? e.result === 'passed' : passes(majorityFor(c.config, f.key), e.yes ?? 0, e.no ?? 0);
         s.motions.push({ ...f, yes: e.yes ?? 0, no: e.no ?? 0, abstain: e.abstain ?? 0, result: ok ? 'passed' : 'failed', t: e.t });
         s.proposed = s.proposed.filter((m) => m !== f);
         if (!ok) break;
-        const type = motionTypes(c.config).find((m) => m.key === f.key);
-        if (type?.effect === 'mod') { s.mode = { kind: 'mod', total: (f.params.total ?? 0) * 60, per: f.params.per ?? 45, startedAt: null, label: f.label, proposer: f.by, slot: f.by ? '' : 'none', lastD: '' }; s.lists.mod = []; }
+        // Something passed, so the floor is reset: motions still waiting are moot and are logged as not voted.
+        for (const rest of s.proposed) s.motions.push({ ...rest, yes: 0, no: 0, abstain: 0, result: 'withdrawn', t: e.t });
+        s.proposed = [];
+        const type = allTypes(c.config).find((m) => m.key === f.key);
+        if (type?.effect === 'mod') { s.mode = { kind: 'mod', total: (f.params.total ?? 0) * 60, per: f.params.per ?? 45, startedAt: null, label: f.label, topic: f.topic ?? '', proposer: f.by, slot: f.by ? '' : 'none', lastD: '' }; s.lists.mod = []; }
+        else if (type?.effect === 'roundrobin') {
+          // Everyone present speaks once, in the committee's order. If nobody has been marked present yet, everyone.
+          const here = c.delegates.filter((d) => (s.attendance[d.id] ?? 'absent') !== 'absent');
+          const all = (here.length ? here : c.delegates).map((d) => d.id);
+          s.mode = { kind: 'mod', total: 0, per: f.params.per ?? 45, startedAt: null, label: f.label, topic: '', proposer: '', slot: 'none', lastD: '', rr: true };
+          s.lists.mod = all; all.forEach((d) => { s.listed[d] = (s.listed[d] ?? 0) + 1; });
+        }
         else if (type?.effect === 'unmod') s.mode = { kind: 'unmod', total: (f.params.total ?? 0) * 60, startedAt: e.t, label: f.label };
+        else if (type?.effect === 'votingbloc') { if (s.speaking) finish(e, 'done'); s.mode = { kind: 'voting', startedAt: e.t, label: f.label }; }
+        else if (type?.effect === 'openlist') { if (s.speaking?.mode === 'mod') finish(e, 'done'); s.gslOpen = true; s.mode = { kind: 'gsl' }; }
         else if (type?.effect === 'speaktime') s.speakTime = f.params.per ?? s.speakTime;
-        else if (type?.effect === 'close') s.closed = true;
+        else if (type?.effect === 'close') s.gslOpen = false;
         break;
       }
       case 'caucus_start': if (s.mode.kind === 'mod' && s.mode.startedAt == null) s.mode.startedAt = e.t; break;
@@ -253,7 +290,7 @@ export const AWARD_CATEGORIES = ['Substance', 'Procedure', 'Diplomacy', 'Collabo
 export const NOTE_TAGS = ['Strength', 'Work on', 'Award', 'Follow up'];
 
 export function newCommittee(name: string, conference = '', conferenceId?: string): Committee {
-  return { id: uid(), name, conference, conferenceId, config: structuredClone(DEFAULT_CONFIG), delegates: [], events: [] };
+  return { id: uid(), name, conference, conferenceId, needsOpen: true, config: structuredClone(DEFAULT_CONFIG), delegates: [], events: [] };
 }
 export const ev = (type: string, rest: Record<string, any> = {}): Ev => ({ id: uid(), t: Date.now(), type, ...rest });
 
@@ -272,4 +309,23 @@ export function parseNames(text: string): string[] {
     out.push(name.slice(0, 120));
   }
   return out;
+}
+
+/**
+ * A moderated caucus is a whole number of speeches: the total has to divide evenly by the per-speaker time.
+ * 10 min with 45 s speakers is 13.3 speeches, which doesn't exist. Returns '' when fine, else what to try instead.
+ */
+export function checkMod(totalMin: number, perSec: number): string {
+  const total = Math.round(totalMin * 60), per = Math.round(perSec);
+  if (!(total > 0) || !(per > 0)) return 'Enter a total time and a time per speaker.';
+  if (per > total) return `A ${per} s speech doesn’t fit in ${totalMin} min.`;
+  if (total % per === 0) return '';
+  const near = (list: number[], to: number, n: number) => [...list].sort((a, b) => Math.abs(a - to) - Math.abs(b - to) || a - b).slice(0, n).sort((a, b) => a - b);
+  // Totals (whole minutes) that hold a whole number of these speeches.
+  const totals: number[] = []; for (let m = 1; m <= 120; m++) if ((m * 60) % per === 0) totals.push(m);
+  // Speech lengths (multiples of 5 s, up to 3 min) that divide this total.
+  const pers: number[] = []; for (let sec = 5; sec <= 180; sec += 5) if (total % sec === 0) pers.push(sec);
+  const t = near(totals, totalMin, 2), p = near(pers, per, 3);
+  const bits = [t.length ? `a total of ${t.join(' or ')} min` : '', p.length ? `${p.join(', ')} s per speaker` : ''].filter(Boolean);
+  return `${totalMin} min doesn’t divide into ${per} s speeches (${(total / per).toFixed(1)} speakers).${bits.length ? ` Try ${bits.join(', or ')}.` : ''}`;
 }
