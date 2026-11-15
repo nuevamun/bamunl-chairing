@@ -75,7 +75,7 @@ export const TRASH_DAYS = 30;
 export type Conference = { id: string; name: string; /** the club (school) that owns it; subadmins see only their own club's, the master sees all */ schoolId?: string; deletedAt?: number };
 
 export type Attendance = 'present' | 'pv' | 'absent';
-export type Mode = { kind: 'gsl' } | { kind: 'mod'; total: number; per: number; /** null until the caucus clock starts: with the first speaker, or when the chair starts it */ startedAt: number | null; label: string; /** what the caucus is about */ topic: string; /** who proposed it, and whether they chose to speak first or last ('' = not chosen yet) */ proposer: string; slot: '' | 'first' | 'last' | 'none'; /** when they chose last, they stay at the end of the list */ lastD: string; /** a round robin: everyone present speaks once, no caucus clock */ rr?: boolean }
+export type Mode = { kind: 'gsl' } | { kind: 'mod'; total: number; per: number; /** null until the caucus clock starts: with the first speaker, or when the chair starts it */ startedAt: number | null; label: string; /** what the caucus is about */ topic: string; /** who proposed it, and whether they chose to speak first or last ('' = not chosen yet) */ proposer: string; slot: '' | 'first' | 'last' | 'none'; /** when they chose last, they stay at the end of the list */ lastD: string; /** a round robin: everyone present speaks once, no caucus clock */ rr?: boolean; /** speeches finished in this caucus, counted against its limit */ spoke: number }
   | { kind: 'voting'; startedAt: number; label: string } | { kind: 'unmod'; total: number; startedAt: number; label: string };
 export type Speech = {
   id: string; d: string; allotted: number; used: number; left: number; over: number;
@@ -104,6 +104,17 @@ export type State = {
   listed: Record<string, number>;
   eventCount: number;
 };
+
+/** A moderated caucus holds total ÷ per-speaker speeches, e.g. 10 min at 60 s is 10 speakers. A round robin has no limit. */
+export function modCapacity(m: Mode): number {
+  if (m.kind !== 'mod' || m.rr || !(m.total > 0) || !(m.per > 0)) return Infinity;
+  return Math.floor(m.total / m.per);
+}
+/** Speaker places taken in the running caucus: finished, speaking now, and waiting. */
+export function modTaken(s: Pick<State, 'mode' | 'speaking' | 'lists'>): number {
+  return (s.mode.kind === 'mod' ? s.mode.spoke : 0) + (s.speaking?.mode === 'mod' ? 1 : 0) + s.lists.mod.length;
+}
+export const modFull = (s: Pick<State, 'mode' | 'speaking' | 'lists'>) => modTaken(s) >= modCapacity(s.mode);
 
 export const uid = () => (globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2) + Date.now().toString(36));
 
@@ -139,6 +150,7 @@ export function derive(c: Committee): State {
       id: e.id, d: sp.d, allotted: sp.allotted, used, left: Math.max(0, sp.allotted - used), over: Math.max(0, used - sp.allotted),
       end: how, to, mode: sp.mode, t: sp.start,
     });
+    if (s.mode.kind === 'mod' && sp.mode === 'mod') s.mode.spoke++;
     s.speaking = null;
   };
 
@@ -148,7 +160,7 @@ export function derive(c: Committee): State {
       case 'attend': s.attendance[e.d] = e.s; break;
       case 'add': {
         const k = key();
-        if ((k === 'mod' || s.gslOpen) && !s.lists[k].includes(e.d)) { s.lists[k].push(e.d); s.listed[e.d] = (s.listed[e.d] ?? 0) + 1; }
+        if ((k === 'mod' ? !modFull(s) : s.gslOpen) && !s.lists[k].includes(e.d)) { s.lists[k].push(e.d); s.listed[e.d] = (s.listed[e.d] ?? 0) + 1; }
         settle();
         break;
       }
@@ -213,12 +225,12 @@ export function derive(c: Committee): State {
         for (const rest of s.proposed) s.motions.push({ ...rest, yes: 0, no: 0, abstain: 0, result: 'withdrawn', t: e.t });
         s.proposed = [];
         const type = allTypes(c.config).find((m) => m.key === f.key);
-        if (type?.effect === 'mod') { s.mode = { kind: 'mod', total: (f.params.total ?? 0) * 60, per: f.params.per ?? 45, startedAt: null, label: f.label, topic: f.topic ?? '', proposer: f.by, slot: f.by ? '' : 'none', lastD: '' }; s.lists.mod = []; }
+        if (type?.effect === 'mod') { s.mode = { kind: 'mod', total: (f.params.total ?? 0) * 60, per: f.params.per ?? 45, startedAt: null, label: f.label, topic: f.topic ?? '', proposer: f.by, slot: f.by ? '' : 'none', lastD: '', spoke: 0 }; s.lists.mod = []; }
         else if (type?.effect === 'roundrobin') {
           // Everyone present speaks once, in the committee's order. If nobody has been marked present yet, everyone.
           const here = c.delegates.filter((d) => (s.attendance[d.id] ?? 'absent') !== 'absent');
           const all = (here.length ? here : c.delegates).map((d) => d.id);
-          s.mode = { kind: 'mod', total: 0, per: f.params.per ?? 45, startedAt: null, label: f.label, topic: '', proposer: '', slot: 'none', lastD: '', rr: true };
+          s.mode = { kind: 'mod', total: 0, per: f.params.per ?? 45, startedAt: null, label: f.label, topic: '', proposer: '', slot: 'none', lastD: '', rr: true, spoke: 0 };
           s.lists.mod = all; all.forEach((d) => { s.listed[d] = (s.listed[d] ?? 0) + 1; });
         }
         else if (type?.effect === 'unmod') s.mode = { kind: 'unmod', total: (f.params.total ?? 0) * 60, startedAt: e.t, label: f.label };
@@ -235,6 +247,7 @@ export function derive(c: Committee): State {
         const d = s.mode.proposer;
         s.mode.slot = e.slot;
         s.lists.mod = s.lists.mod.filter((x) => x !== d);
+        if (e.slot !== 'none' && modFull(s)) { s.mode.slot = 'none'; break; }   // the caucus is already full
         if (e.slot === 'first') s.lists.mod.unshift(d);
         else if (e.slot === 'last') { s.lists.mod.push(d); s.mode.lastD = d; }
         if (e.slot !== 'none') s.listed[d] = (s.listed[d] ?? 0) + 1;

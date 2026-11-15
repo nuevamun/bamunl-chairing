@@ -264,7 +264,9 @@ body.bare { background: var(--twilight); color: #fff; }
 .big-clock.out { color: #ff8a80; }
 .display .meter { width: min(70rem, 100%); height: 1.1rem; background: rgb(255 255 255 / .15); box-shadow: none; }
 .display .bar-fill { background: var(--sky); }
-.queue ol { margin: .5rem 0 0; padding-left: 1.5rem; font-size: clamp(1.25rem, 2.6vw, 2.25rem); display: flex; flex-wrap: wrap; gap: .25rem 2.5rem; }
+.queue ol { margin: .75rem 0 0; padding: 0; list-style: none; counter-reset: next; display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; font-size: clamp(1.25rem, 2.6vw, 2.25rem); }
+.queue li { counter-increment: next; display: inline-flex; align-items: baseline; gap: .6rem; }
+.queue li::before { content: counter(next); display: inline-grid; place-items: center; min-width: 1.9em; height: 1.9em; border-radius: 50%; background: rgb(255 255 255 / .18); color: var(--sky); font-size: .6em; font-weight: 800; }
 
 [hidden] { display: none !important; }
 

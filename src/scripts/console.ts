@@ -1,6 +1,6 @@
 // The chair console: the back of the room. Everything here writes events; nothing mutates state directly.
 import { store } from '../lib/store';
-import { derive, statsFor, motionTypes, allTypes, majorityFor, parseNames, hasTopic, checkMod, elapsed, clock, ev, uid, effective, AWARD_CATEGORIES, NOTE_TAGS, type Committee, type State, type Attendance } from '../lib/engine';
+import { derive, statsFor, modCapacity, modTaken, modFull, motionTypes, allTypes, majorityFor, parseNames, hasTopic, checkMod, elapsed, clock, ev, uid, effective, AWARD_CATEGORIES, NOTE_TAGS, type Committee, type State, type Attendance } from '../lib/engine';
 import { h, $, mount } from '../lib/ui';
 import { askConfirm } from '../lib/confirm';
 import { askDelete } from '../lib/guard';
@@ -93,19 +93,20 @@ function combo(all: Opt[], onPick: (o: Opt) => void, label: string, placeholder:
   return Object.assign(h('div', { class: 'combo' + (dropdown ? ' combo--select' : '') }, input, box), { input });
 }
 
-const delegateOpts = (list: string[] = []): Opt[] => c!.delegates.map((d) => {
+const delegateOpts = (list: string[] = [], limited = false): Opt[] => c!.delegates.map((d) => {
   const queued = list.includes(d.id), speaking = s.speaking?.d === d.id, absent = !here(d.id);
-  return { id: d.id, name: d.name, off: queued || speaking, note: queued ? 'on the list' : speaking ? 'speaking' : absent ? 'absent' : '' };
+  const full = limited && !queued && !speaking;     // the caucus has all the speakers it has time for
+  return { id: d.id, name: d.name, off: queued || speaking || full, note: queued ? 'on the list' : speaking ? 'speaking' : full ? 'full' : absent ? 'absent' : '' };
 });
 
 /** Tap a delegate to put them on the list, tap again to take them off. Numbers show the order they will be called. */
-function takeNames(key: 'gsl' | 'mod', list: string[]) {
+function takeNames(key: 'gsl' | 'mod', list: string[], full = false) {
   if (!c!.delegates.length) return null;
   const chips = c!.delegates.map((d) => {
     const at = list.indexOf(d.id);
     const spoke = s.speeches.filter((x) => x.d === d.id && x.mode === key).length;
     const speaking = s.speaking?.d === d.id;
-    return h('button', { type: 'button', class: 'chip-btn' + (at >= 0 ? ' chip-btn--on' : '') + (!here(d.id) ? ' chip-btn--away' : ''), 'aria-pressed': String(at >= 0), disabled: speaking ? true : null,
+    return h('button', { type: 'button', class: 'chip-btn' + (at >= 0 ? ' chip-btn--on' : '') + (!here(d.id) ? ' chip-btn--away' : ''), 'aria-pressed': String(at >= 0), disabled: speaking || (full && at < 0) ? true : null,
       onclick: () => push(at >= 0 ? 'drop' : 'add', { d: d.id }) },
       at >= 0 ? h('b', { class: 'chip-n' }, String(at + 1)) : null, d.name, spoke ? h('small', null, `×${spoke}`) : null);
   });
@@ -118,15 +119,16 @@ function listCard() {
   const key = mode.kind === 'mod' ? 'mod' : 'gsl';
   const list = s.lists[key];
   const wasAdding = refocusAdd; refocusAdd = false;
-  const picker = combo(delegateOpts(list), (o) => { refocusAdd = true; push('add', { d: o.id }); }, 'Add a delegate to the list', 'Type a name to add…', wasAdding);
-  const names = takeNames(key, list);
+  const full = key === 'mod' && modFull(s);
+  const picker = combo(delegateOpts(list, full), (o) => { refocusAdd = true; push('add', { d: o.id }); }, 'Add a delegate to the list', 'Type a name to add…', wasAdding);
+  const names = takeNames(key, list, full);
   // A moderated caucus just passed: its proposer decides where they speak. Nothing starts until the chair does.
   const ask = mode.kind === 'mod' && !mode.slot && mode.proposer
     ? h('div', { class: 'ask' }, h('p', null, h('strong', null, nameOf(mode.proposer)), ' proposed this. Speak:'),
         h('div', { class: 'btn-row' }, btn('First', () => push('proposer_slot', { slot: 'first' }), 'btn btn--primary btn--sm'), btn('Last', () => push('proposer_slot', { slot: 'last' }), 'btn btn--primary btn--sm'), btn('Neither', () => push('proposer_slot', { slot: 'none' }))))
     : null;
   return h('section', { class: 'card' },
-    h('div', { class: 'card-head' }, h('h2', null, mode.kind === 'mod' ? 'order of speaking' : 'speakers list'), h('span', { class: 'muted' }, `${mode.kind === 'mod' ? mode.per : s.speakTime}s each`)),
+    h('div', { class: 'card-head' }, h('h2', null, mode.kind === 'mod' ? 'order of speaking' : 'speakers list'), h('span', { class: 'muted' }, mode.kind === 'mod' && modCapacity(mode) !== Infinity ? `${modTaken(s)} of ${modCapacity(mode)} speakers · ${mode.per}s each` : `${mode.kind === 'mod' ? mode.per : s.speakTime}s each`)),
     ask,
     key === 'gsl' && !s.gslOpen ? h('p', { class: 'empty' }, 'No speakers list is open. A motion to open the speakers list opens it.') : picker,
     key === 'gsl' && !s.gslOpen ? null : names,

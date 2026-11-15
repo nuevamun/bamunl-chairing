@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { derive, statsFor, newCommittee, passes, motionTypes, parseNames, checkMod, DEFAULT_CONFIG } from '../src/lib/engine.ts';
+import { derive, statsFor, newCommittee, passes, motionTypes, parseNames, checkMod, DEFAULT_CONFIG, modCapacity, modFull } from '../src/lib/engine.ts';
 
 const mk = () => { const c = newCommittee('UNSC'); c.needsOpen = false;   // these tests start with a list already open, like committees made before lists had to be opened
   c.delegates = [{ id: 'a', name: 'France' }, { id: 'b', name: 'Peru' }]; return c; };
@@ -200,4 +200,24 @@ test('a caucus works before any speakers list is open', () => {
   E(c, 0, 'floor', { key: 'mod', params: { total: 10, per: 60 } }); E(c, 1, 'vote', { result: 'passed' }); E(c, 2, 'add', { d: 'a' });
   assert.deepEqual(derive(c).lists.mod, ['a']);
   E(c, 3, 'end_caucus'); assert.equal(derive(c).gslOpen, false);
+});
+
+test('a moderated caucus holds only as many speakers as its time allows', () => {
+  const c = mk(); c.delegates = Array.from({ length: 6 }, (_, i) => ({ id: 'd' + i, name: 'D' + i }));
+  E(c, 0, 'floor', { key: 'mod', params: { total: 3, per: 60 } }); E(c, 1, 'vote', { result: 'passed' });   // 3 minutes at 60 s = 3 speakers
+  assert.equal(modCapacity(derive(c).mode), 3);
+  for (let i = 0; i < 6; i++) E(c, 2 + i, 'add', { d: 'd' + i });
+  let s = derive(c);
+  assert.deepEqual(s.lists.mod, ['d0', 'd1', 'd2']);              // d3 to d5 were refused
+  assert.equal(modFull(s), true);
+  E(c, 10, 'start', { d: 'd0' }); E(c, 11, 'stop', { how: 'done' });   // one has spoken: still full, they used a place
+  s = derive(c); assert.equal(s.mode.spoke, 1);
+  E(c, 12, 'add', { d: 'd3' }); assert.deepEqual(derive(c).lists.mod, ['d1', 'd2']);
+  E(c, 13, 'drop', { d: 'd2' }); E(c, 14, 'add', { d: 'd3' });       // removing someone frees the place
+  assert.deepEqual(derive(c).lists.mod, ['d1', 'd3']);
+});
+test('a round robin and the general list have no such limit', () => {
+  const c = mk(); c.delegates = Array.from({ length: 5 }, (_, i) => ({ id: 'd' + i, name: 'D' + i }));
+  E(c, 0, 'floor', { key: 'roundrobin', params: { per: 30 } }); E(c, 1, 'vote', { result: 'passed' });
+  assert.equal(modCapacity(derive(c).mode), Infinity); assert.equal(derive(c).lists.mod.length, 5);
 });
