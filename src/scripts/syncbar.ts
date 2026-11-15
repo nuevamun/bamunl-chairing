@@ -16,3 +16,10 @@ onStatus((s) => {
     s.who ? h('button', { type: 'button', class: 'linkish', onclick: async () => { await signOut(); location.href = '/login'; } }, 'Sign out') : null].filter((x) => x != null) as Array<Node | string>);
 });
 startSync();
+
+// Never lose work quietly: if the device can't save, the header says so and stays that way.
+addEventListener('chairing:storage-full', () => {
+  if (!el) return;
+  el.className = 'sync sync--err';
+  el.textContent = 'This device can’t save: changes are not being kept. Sync, then clear space.';
+});

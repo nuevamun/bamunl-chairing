@@ -5,6 +5,11 @@ import { serviceClient } from '../../lib/server';
 import { adminEmail, confEmail, checkNew, isTaken, mayManage, MIN_PASSWORD, MAX_PASSWORD, MAX_PER_CONFERENCE } from '../../lib/logins';
 
 export const prerender = false;
+
+/** Any unexpected failure (a missing server key, a Supabase outage) becomes a plain JSON error, never a stack trace. */
+const safe = (fn: APIRoute): APIRoute => async (ctx) => {
+  try { return await fn(ctx); } catch { return json({ error: 'Sign-ins aren’t available right now.' }, 503); }
+};
 const json = (body: object, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
 
 async function body(request: Request, origin: string) {
@@ -23,7 +28,7 @@ async function gate(locals: App.Locals, conferenceId: string) {
 }
 
 // Make one.
-export const POST: APIRoute = async ({ request, locals, url }) => {
+export const POST: APIRoute = safe(async ({ request, locals, url }) => {
   const b = await body(request, url.origin);
   if (!b) return json({ error: 'Bad request.' }, 400);
   const conferenceId = String(b.conferenceId ?? ''), username = String(b.username ?? '').trim().toLowerCase(), password = String(b.password ?? '');
@@ -45,7 +50,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     return row.error.code === '23505' ? json({ error: 'That username is taken.' }, 409) : json({ error: 'Could not create the login.' }, 500);
   }
   return json({ ok: true, username });
-};
+});
 
 async function target(locals: App.Locals, userId: string) {
   const sc = serviceClient();
@@ -56,7 +61,7 @@ async function target(locals: App.Locals, userId: string) {
 }
 
 // Reset a password. Anyone signed in as that login is signed out.
-export const PATCH: APIRoute = async ({ request, locals, url }) => {
+export const PATCH: APIRoute = safe(async ({ request, locals, url }) => {
   const b = await body(request, url.origin);
   if (!b) return json({ error: 'Bad request.' }, 400);
   const userId = String(b.userId ?? ''), password = String(b.password ?? '');
@@ -66,13 +71,13 @@ export const PATCH: APIRoute = async ({ request, locals, url }) => {
   if (r.error) return json({ error: 'Could not change the password.' }, 500);
   await sc.rpc('revoke_sessions', { uid: userId });   // league migration 4
   return json({ ok: true });
-};
+});
 
 // Remove one. Its row goes with it.
-export const DELETE: APIRoute = async ({ request, locals, url }) => {
+export const DELETE: APIRoute = safe(async ({ request, locals, url }) => {
   const b = await body(request, url.origin);
   if (!b) return json({ error: 'Bad request.' }, 400);
   const { sc, error } = await target(locals, String(b.userId ?? '')); if (error) return error;
   const r = await sc.auth.admin.deleteUser(String(b.userId));
   return r.error ? json({ error: 'Could not remove the login.' }, 500) : json({ ok: true });
-};
+});

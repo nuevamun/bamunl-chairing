@@ -15,8 +15,9 @@ const label = (el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement) =
 
 function clear(el: Element) {
   el.removeAttribute('aria-invalid');
-  const note = el.getAttribute('data-err-id') && document.getElementById(el.getAttribute('data-err-id')!);
-  note?.remove(); el.removeAttribute('data-err-id');
+  const noteId = el.getAttribute('data-err-id');
+  if (noteId) document.getElementById(noteId)?.remove();
+  el.removeAttribute('data-err-id');
 }
 
 let n = 0;

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { derive, statsFor, newCommittee, passes, motionTypes, parseNames, checkMod, DEFAULT_CONFIG, modCapacity, modFull, evaluate, recommend, WEIGHT_PRESETS } from '../src/lib/engine.ts';
+import { derive, statsFor, newCommittee, passes, motionTypes, parseNames, checkMod, DEFAULT_CONFIG, modCapacity, modFull, unmodLeft, evaluate, recommend, WEIGHT_PRESETS } from '../src/lib/engine.ts';
 
 const mk = () => { const c = newCommittee('UNSC'); c.needsOpen = false;   // these tests start with a list already open, like committees made before lists had to be opened
   c.delegates = [{ id: 'a', name: 'France' }, { id: 'b', name: 'Peru' }]; return c; };
@@ -163,7 +163,7 @@ test('moving into voting bloc takes two-thirds when decided by counts', () => {
   E(c, 0, 'floor', { key: 'votingbloc' }); E(c, 1, 'vote', { yes: 5, no: 3 });          // simple majority would pass; two-thirds does not
   assert.equal(derive(c).mode.kind, 'gsl'); assert.equal(derive(c).motions[0].result, 'failed');
   E(c, 2, 'floor', { key: 'votingbloc' }); E(c, 3, 'vote', { yes: 6, no: 3 });
-  assert.equal(derive(c).mode.kind, 'voting');
+  assert.equal(derive(c).mode.kind, 'voting'); assert.equal(derive(c).mode.label, 'Voting bloc');   // says where we are, not what was moved
 });
 
 test('a moderated caucus must be a whole number of speeches', () => {
@@ -300,4 +300,18 @@ test('a full caucus stays full as speakers finish, including when they yield to 
   E(c, t++, 'drop', { d: 'd6' });                                           // taking one off frees exactly one place
   E(c, t++, 'add', { d: 'd12' }); E(c, t++, 'add', { d: 'd13' });
   assert.equal(derive(c).lists.mod.length, 6);
+});
+
+test('an unmoderated caucus clock can be paused and resumed, and never ends by itself', () => {
+  const c = mk();
+  E(c, 0, 'floor', { key: 'unmod', params: { total: 10 } }); E(c, 1000, 'vote', { result: 'passed' });   // starts at t=1000
+  assert.equal(unmodLeft(derive(c).mode, 61_000), 540);                      // a minute in
+  E(c, 61_000, 'caucus_pause');
+  assert.equal(unmodLeft(derive(c).mode, 3_661_000), 540);                   // an hour later, still frozen
+  E(c, 3_661_000, 'caucus_resume');
+  assert.equal(unmodLeft(derive(c).mode, 3_721_000), 480);                   // another minute runs
+  assert.equal(derive(c).mode.kind, 'unmod');
+  assert.ok(unmodLeft(derive(c).mode, 99_999_999) < 0);                      // way over time: still the chair's call to end it
+  E(c, 100_000_000, 'caucus_pause'); E(c, 100_000_001, 'caucus_pause');        // a double pause changes nothing
+  assert.equal(derive(c).mode.since, null);
 });

@@ -384,3 +384,4 @@ p.reminder { margin: 0; }
 
 .update { position: fixed; left: 50%; bottom: 1rem; transform: translateX(-50%); z-index: 40; display: flex; align-items: center; gap: 1rem; padding: .6rem .75rem .6rem 1.1rem; background: var(--twilight); color: #fff; border-radius: 999px; box-shadow: 0 8px 24px rgb(20 20 60 / .3); font-weight: 600; }
 .update .btn--primary { background: #fff; color: var(--twilight); border-color: #fff; }
+.big-clock.paused { opacity: .55; }

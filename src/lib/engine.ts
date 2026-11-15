@@ -78,7 +78,7 @@ export type Conference = { id: string; name: string; /** the club (school) that 
 
 export type Attendance = 'present' | 'pv' | 'absent';
 export type Mode = { kind: 'gsl' } | { kind: 'mod'; total: number; per: number; /** null until the caucus clock starts: with the first speaker, or when the chair starts it */ startedAt: number | null; label: string; /** what the caucus is about */ topic: string; /** who proposed it, and whether they chose to speak first or last ('' = not chosen yet) */ proposer: string; slot: '' | 'first' | 'last' | 'none'; /** when they chose last, they stay at the end of the list */ lastD: string; /** a round robin: everyone present speaks once, no caucus clock */ rr?: boolean; /** speeches finished in this caucus, counted against its limit */ spoke: number }
-  | { kind: 'voting'; startedAt: number; label: string } | { kind: 'unmod'; total: number; startedAt: number; label: string };
+  | { kind: 'voting'; startedAt: number; label: string } | { kind: 'unmod'; total: number; startedAt: number; label: string; /** ms already used before the last pause */ acc: number; /** when the clock last started running; null while paused */ since: number | null };
 export type Speech = {
   id: string; d: string; allotted: number; used: number; left: number; over: number;
   end: 'done' | 'chair' | 'delegate' | 'questions'; to?: string; mode: 'gsl' | 'mod'; t: number;
@@ -117,6 +117,11 @@ export function modTaken(s: Pick<State, 'mode' | 'speaking' | 'lists'>): number 
   return (s.mode.kind === 'mod' ? s.mode.spoke : 0) + (s.speaking?.mode === 'mod' ? 1 : 0) + s.lists.mod.length;
 }
 export const modFull = (s: Pick<State, 'mode' | 'speaking' | 'lists'>) => modTaken(s) >= modCapacity(s.mode);
+
+/** Seconds left on an unmoderated caucus, stopping while it is paused. It never ends by itself: the chair ends it. */
+export function unmodLeft(m: Extract<Mode, { kind: 'unmod' }>, now: number) {
+  return m.total - (m.acc + (m.since != null ? now - m.since : 0)) / 1000;
+}
 
 export const uid = () => (globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2) + Date.now().toString(36));
 
@@ -182,6 +187,8 @@ export function derive(c: Committee): State {
         break;
       }
       case 'start': {
+        // A full moderated caucus has no place for someone who isn't already on its order of speaking.
+        if (s.mode.kind === 'mod' && !s.lists.mod.includes(e.d) && s.speaking?.d !== e.d && modFull(s)) break;
         if (s.speaking) finish(e, 'done');
         const k = key();
         s.lists[k] = s.lists[k].filter((x) => x !== e.d);
@@ -240,13 +247,15 @@ export function derive(c: Committee): State {
           s.mode = { kind: 'mod', total: 0, per: f.params.per ?? 45, startedAt: null, label: f.label, topic: '', proposer: '', slot: 'none', lastD: '', rr: true, spoke: 0 };
           s.lists.mod = all; all.forEach((d) => { s.listed[d] = (s.listed[d] ?? 0) + 1; });
         }
-        else if (type?.effect === 'unmod') s.mode = { kind: 'unmod', total: (f.params.total ?? 0) * 60, startedAt: e.t, label: f.label };
-        else if (type?.effect === 'votingbloc') { if (s.speaking) finish(e, 'done'); s.mode = { kind: 'voting', startedAt: e.t, label: f.label }; }
+        else if (type?.effect === 'unmod') s.mode = { kind: 'unmod', total: (f.params.total ?? 0) * 60, startedAt: e.t, label: f.label, acc: 0, since: e.t };
+        else if (type?.effect === 'votingbloc') { if (s.speaking) finish(e, 'done'); s.mode = { kind: 'voting', startedAt: e.t, label: 'Voting bloc' }; }   // the room is now IN voting bloc: that's all the screens say
         else if (type?.effect === 'openlist') { if (s.speaking?.mode === 'mod') finish(e, 'done'); s.gslOpen = true; s.mode = { kind: 'gsl' }; }
         else if (type?.effect === 'speaktime') s.speakTime = f.params.per ?? s.speakTime;
         else if (type?.effect === 'close') s.gslOpen = false;
         break;
       }
+      case 'caucus_pause': if (s.mode.kind === 'unmod' && s.mode.since != null) { s.mode.acc += e.t - s.mode.since; s.mode.since = null; } break;
+      case 'caucus_resume': if (s.mode.kind === 'unmod' && s.mode.since == null) s.mode.since = e.t; break;
       case 'caucus_start': if (s.mode.kind === 'mod' && s.mode.startedAt == null) s.mode.startedAt = e.t; break;
       case 'proposer_slot': {
         // The proposer of a moderated caucus speaks first, speaks last, or neither.

@@ -16,7 +16,8 @@ class Store {
   }
   /** `quiet` is for data that just arrived from the database: it isn't a local change, so it must not trigger another sync. */
   private write(key: string, list: unknown[], quiet = false) {
-    try { localStorage.setItem(key, JSON.stringify(list)); } catch { /* storage full or blocked: stays in memory only */ }
+    // If this device can't hold it (storage full or blocked) the change isn't saved here. Say so loudly, once it happens.
+    try { localStorage.setItem(key, JSON.stringify(list)); } catch { dispatchEvent(new Event('chairing:storage-full')); }
     this.chan?.postMessage('changed');
     if (!quiet) dispatchEvent(new Event('chairing:dirty'));
   }

@@ -1,6 +1,6 @@
 // The chair console: the back of the room. Everything here writes events; nothing mutates state directly.
 import { store } from '../lib/store';
-import { derive, statsFor, evaluate, recommend, CRITERIA, DEFAULT_WEIGHTS, WEIGHT_PRESETS, modCapacity, modTaken, modFull, motionTypes, allTypes, majorityFor, parseNames, hasTopic, checkMod, elapsed, clock, ev, uid, effective, AWARD_CATEGORIES, NOTE_TAGS, type Committee, type State, type Attendance } from '../lib/engine';
+import { derive, statsFor, unmodLeft, evaluate, recommend, CRITERIA, DEFAULT_WEIGHTS, WEIGHT_PRESETS, modCapacity, modTaken, modFull, motionTypes, allTypes, majorityFor, parseNames, hasTopic, checkMod, elapsed, clock, ev, uid, effective, AWARD_CATEGORIES, NOTE_TAGS, type Committee, type State, type Attendance } from '../lib/engine';
 import { h, $, mount } from '../lib/ui';
 import { askConfirm } from '../lib/confirm';
 import { askDelete } from '../lib/guard';
@@ -38,6 +38,7 @@ function speakerCard() {
   const modeBar = h('div', { class: 'modebar' },
     h('strong', null, mode.kind === 'gsl' ? (s.gslOpen ? 'Speakers list' : 'No speakers list open') : mode.kind === 'mod' && mode.topic ? `${mode.label}: ${mode.topic}` : mode.label),
     mode.kind !== 'gsl' ? btn(mode.kind === 'voting' ? 'End voting bloc' : mode.kind === 'mod' && mode.rr ? 'End round robin' : 'End caucus', () => push('end_caucus')) : null,
+    mode.kind === 'unmod' ? (mode.since != null ? btn('Pause', () => push('caucus_pause')) : btn('Resume', () => push('caucus_resume'), 'btn btn--primary btn--sm')) : null,
     capEl);
 
   const note = h('input', { type: 'text', placeholder: 'Quick note on this speaker', 'aria-label': 'Quick note on this speaker', autocomplete: 'off' }) as HTMLInputElement;
@@ -103,20 +104,6 @@ const delegateOpts = (list: string[] = [], limited = false): Opt[] => c!.delegat
   return { id: d.id, name: d.name, off: queued || speaking || full, note: [state, spokeText(d.id)].filter(Boolean).join(' · ') };
 });
 
-/** Tap a delegate to put them on the list, tap again to take them off. Numbers show the order they will be called. */
-function takeNames(key: 'gsl' | 'mod', list: string[], full = false) {
-  if (!c!.delegates.length) return null;
-  const chips = c!.delegates.map((d) => {
-    const at = list.indexOf(d.id);
-    const spoke = spokeCount(d.id);
-    const speaking = s.speaking?.d === d.id;
-    return h('button', { type: 'button', class: 'chip-btn' + (at >= 0 ? ' chip-btn--on' : '') + (!here(d.id) ? ' chip-btn--away' : ''), 'aria-pressed': String(at >= 0), disabled: speaking || (full && at < 0) ? true : null,
-      onclick: () => push(at >= 0 ? 'drop' : 'add', { d: d.id }) },
-      at >= 0 ? h('b', { class: 'chip-n' }, String(at + 1)) : null, d.name, spoke ? h('small', { title: `Has spoken ${spoke} time${spoke === 1 ? '' : 's'}` }, `spoke ${spoke}×`) : null);
-  });
-  return h('details', { class: 'names', open: key === 'mod' }, h('summary', null, 'Take names'), h('div', { class: 'chip-grid' }, ...chips));
-}
-
 function listCard() {
   const mode = s.mode;
   if (mode.kind === 'unmod' || mode.kind === 'voting') return h('section', { class: 'card' }, h('h2', null, 'speakers list'), h('p', { class: 'empty' }, `Not used in ${mode.label.toLowerCase()}.`));
@@ -124,8 +111,7 @@ function listCard() {
   const list = s.lists[key];
   const wasAdding = refocusAdd; refocusAdd = false;
   const full = key === 'mod' && modFull(s);
-  const picker = combo(delegateOpts(list, full), (o) => { refocusAdd = true; push('add', { d: o.id }); }, 'Add a delegate to the list', 'Type a name to add…', wasAdding);
-  const names = takeNames(key, list, full);
+  const picker = combo(delegateOpts(list, full), (o) => { refocusAdd = true; push('add', { d: o.id }); }, 'Add a delegate to the list', 'Add a delegate…', wasAdding, true);
   // A moderated caucus just passed: its proposer decides where they speak. Nothing starts until the chair does.
   const ask = mode.kind === 'mod' && !mode.slot && mode.proposer
     ? h('div', { class: 'ask' }, h('p', null, h('strong', null, nameOf(mode.proposer)), ' proposed this. Speak:'),
@@ -135,7 +121,6 @@ function listCard() {
     h('div', { class: 'card-head' }, h('h2', null, mode.kind === 'mod' ? 'order of speaking' : 'speakers list'), h('span', { class: 'muted' }, mode.kind === 'mod' && modCapacity(mode) !== Infinity ? `${modTaken(s)} of ${modCapacity(mode)} speakers · ${mode.per}s each` : `${mode.kind === 'mod' ? mode.per : s.speakTime}s each`)),
     ask,
     key === 'gsl' && !s.gslOpen ? h('p', { class: 'empty' }, 'No speakers list is open. A motion to open the speakers list opens it.') : picker,
-    key === 'gsl' && !s.gslOpen ? null : names,
     h('ol', { class: 'queue-list' }, ...list.map((d, i) => h('li', null,
       h('span', { class: 'qn' }, nameOf(d), spokeText(d) ? h('small', { class: 'muted spoke' }, ' ' + spokeText(d)) : null),
       btn('Start', () => push('start', { d }), 'btn btn--primary btn--xs'),
@@ -258,7 +243,7 @@ function rollTab() {
     const b = (v: Attendance, label: string) => h('button', { type: 'button', class: 'seg' + (a === v ? ' seg--on' : ''), 'aria-pressed': String(a === v), onclick: () => push('attend', { d: d.id, s: v }) }, label);
     return h('div', { class: 'r' }, h('strong', null, d.name), h('div', { class: 'segs' }, b('present', 'Present'), b('pv', 'Present and voting'), b('absent', 'Absent')));
   });
-  const all = btn('Mark everyone present', () => c!.delegates.forEach((d) => store.append(id, ev('attend', { d: d.id, s: 'present' }))) || render());
+  const all = btn('Mark everyone present', () => { c!.delegates.forEach((d) => store.append(id, ev('attend', { d: d.id, s: 'present' }))); render(); });
   const n = Object.values(s.attendance).filter((a) => a !== 'absent').length;
   return h('section', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', null, 'roll call'), h('span', { class: 'muted' }, `${n} of ${c!.delegates.length}`), all),
     c!.delegates.length ? h('div', { class: 'rows' }, ...rows) : h('p', { class: 'empty' }, 'Add delegates under Setup.'));
@@ -478,7 +463,7 @@ function tick() {
   if (capEl && s.mode.kind === 'mod') {
     const cap = modCapacity(s.mode);
     capEl.textContent = cap === Infinity ? `${s.mode.spoke} given · ${s.lists.mod.length} to go` : `${s.mode.spoke} of ${cap} speeches given`;
-  } else if (capEl && s.mode.kind === 'unmod') capEl.textContent = `${clock(s.mode.total - (now - s.mode.startedAt) / 1000)} left`;
+  } else if (capEl && s.mode.kind === 'unmod') capEl.textContent = `${clock(unmodLeft(s.mode, now))} left${s.mode.since == null ? ' · paused' : ''}`;
 }
 
 addEventListener('keydown', (e) => {
@@ -487,7 +472,10 @@ addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && (menu || tab !== 'floor')) { menu = false; picked = null; tab = 'floor'; render(); return; }
   if (/INPUT|TEXTAREA|SELECT|BUTTON/.test(t.tagName)) return;
   if (e.key === 'Enter' && !(menu || tab !== 'floor') && !dlg?.open) { e.preventDefault(); askBackend(); return; }
-  if (e.code === 'Space' && s?.speaking && tab === 'floor') { e.preventDefault(); push(s.speaking.since != null ? 'pause' : 'resume'); }
+  if (e.code === 'Space' && tab === 'floor') {
+    if (s?.speaking) { e.preventDefault(); push(s.speaking.since != null ? 'pause' : 'resume'); }
+    else if (s?.mode.kind === 'unmod') { e.preventDefault(); push(s.mode.since != null ? 'caucus_pause' : 'caucus_resume'); }
+  }
 });
 // Leaving this tab or window blurs the backend behind a veil. Nothing is closed or cleared: Re-enter puts you
 // back exactly where you were, with whatever you had typed. "Don't re-enter" leaves the backend.

@@ -1,6 +1,6 @@
 // The forward-facing screen: what delegates see. Never shows notes, scores or any per-delegate feedback.
 import { store } from '../lib/store';
-import { derive, elapsed, clock, allTypes, majorityFor, modCapacity, type Committee } from '../lib/engine';
+import { derive, elapsed, clock, unmodLeft, allTypes, majorityFor, modCapacity, type Committee } from '../lib/engine';
 import { h, mount } from '../lib/ui';
 
 const id = location.pathname.split('/')[2];
@@ -51,7 +51,8 @@ function tick() {
   const now = Date.now();
   if (s.mode.kind === 'voting') return;
   if (s.mode.kind === 'unmod') {
-    clockEl.textContent = clock(s.mode.total - (now - s.mode.startedAt) / 1000);
+    clockEl.textContent = clock(unmodLeft(s.mode, now));
+    clockEl.classList.toggle('paused', s.mode.since == null);
     return;
   }
   if (!s.speaking) return;
