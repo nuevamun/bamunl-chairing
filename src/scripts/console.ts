@@ -279,6 +279,25 @@ function drawTools() {
     h('a', { class: 'btn btn--primary btn--sm', href: `/c/${id}/display`, target: 'display' }, 'Open display'));
 }
 
+let dlg: HTMLDialogElement | null = null;
+function askBackend() {
+  if (!dlg) {
+    dlg = h('dialog', { class: 'modal', 'aria-labelledby': 'bk-title' }) as HTMLDialogElement;
+    document.body.append(dlg);
+  }
+  const d = dlg;
+  const close = () => d.open && d.close();
+  d.replaceChildren(
+    h('h2', { id: 'bk-title' }, 'Open the backend?'),
+    h('p', null, 'Roll call, feedback, scores and setup will be on screen.'),
+    h('div', { class: 'form-actions' },
+      h('button', { type: 'button', class: 'btn btn--ghost btn--sm', onclick: close }, 'Cancel'),
+      h('button', { type: 'button', class: 'btn btn--primary btn--sm', onclick: () => { close(); menu = true; render(); } }, 'Open')));
+  d.onclick = (e) => { if (e.target === d) close(); };
+  if (!d.open) d.showModal();
+  (d.querySelector('.btn--ghost') as HTMLElement).focus();   // Enter again doesn't open it by accident
+}
+
 function render() {
   c = store.get(id);
   if (!c) { app.replaceChildren(h('div', { class: 'lead' }, h('h1', { class: 'title' }, 'not found'), h('a', { class: 'btn btn--primary', href: '/' }, 'All committees'))); return; }
@@ -293,7 +312,10 @@ function render() {
     h('div', { class: 'lead' }, h('h1', { class: 'title' }, c.name.toLowerCase()), c.conference ? h('p', { class: 'subtitle' }, c.conference) : null),
     h('nav', { class: 'tabs', 'aria-label': 'Sections' },
       ...(showTabs ? tabs.map(([k, label]) => h('button', { type: 'button', class: 'tab' + (k === tab ? ' tab--on' : ''), 'aria-current': k === tab ? 'page' : null, onclick: () => { tab = k; menu = k !== 'floor'; if (k !== 'delegates') picked = null; render(); } }, label)) : []),
-      h('button', { type: 'button', class: 'peek', 'aria-expanded': String(showTabs), 'aria-label': showTabs ? 'Hide sections' : 'Show sections', onclick: () => { if (showTabs) { tab = 'floor'; menu = false; picked = null; } else menu = true; render(); } }, showTabs ? 'Hide' : '·  ·  ·')),
+      showTabs
+        ? h('button', { type: 'button', class: 'peek', onclick: () => { tab = 'floor'; menu = false; picked = null; render(); } }, 'Hide backend')
+        // Blurred so the label can't be read from across the room. Click it, or press Enter, and it asks first.
+        : h('button', { type: 'button', class: 'backend', 'aria-label': 'Backend', onclick: askBackend }, 'Backend')),
     body);
   tick();
 }
@@ -314,9 +336,19 @@ function tick() {
 addEventListener('keydown', (e) => {
   const t = e.target as HTMLElement;
   if (e.key === 'Escape' && (menu || tab !== 'floor')) { menu = false; picked = null; tab = 'floor'; render(); return; }
-  if (/INPUT|TEXTAREA|SELECT/.test(t.tagName)) return;
+  if (/INPUT|TEXTAREA|SELECT|BUTTON/.test(t.tagName)) return;
+  if (e.key === 'Enter' && !(menu || tab !== 'floor') && !dlg?.open) { e.preventDefault(); askBackend(); return; }
   if (e.code === 'Space' && s?.speaking && tab === 'floor') { e.preventDefault(); push(s.speaking.since != null ? 'pause' : 'resume'); }
 });
+// Leaving this tab or window locks the backend again: coming back means confirming again.
+function relock() {
+  if (dlg?.open) dlg.close();
+  if (!menu && tab === 'floor') return;
+  menu = false; picked = null; tab = 'floor'; render();
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden) relock(); });
+addEventListener('blur', relock);
+
 render();
 store.subscribe(render);
 setInterval(tick, 250);
