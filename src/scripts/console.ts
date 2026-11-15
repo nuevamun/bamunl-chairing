@@ -2,10 +2,13 @@
 import { store } from '../lib/store';
 import { derive, statsFor, elapsed, clock, ev, uid, effective, AWARD_CATEGORIES, NOTE_TAGS, type Committee, type State, type Attendance } from '../lib/engine';
 import { h, $ } from '../lib/ui';
+import { askConfirm } from '../lib/confirm';
+import { askDelete } from '../lib/guard';
 
 const id = location.pathname.split('/')[2];
 const app = document.getElementById('app')!;
 const tools = document.getElementById('bar-tools')!;
+store.migrate();
 type Tab = 'floor' | 'roll' | 'delegates' | 'setup';
 let tab: Tab = 'floor';
 let menu = false;                     // the tab row stays out of sight on the Floor until the chair asks for it
@@ -245,16 +248,14 @@ function detail(d: string) {
 
 function setupTab() {
   const name = h('input', { type: 'text', value: c!.name }) as HTMLInputElement;
-  const conf = h('input', { type: 'text', value: c!.conference }) as HTMLInputElement;
   const st = h('input', { type: 'number', value: c!.config.speakTime, min: 5, inputmode: 'numeric' }) as HTMLInputElement;
   const maj = h('select', null, h('option', { value: 'simple' }, 'Simple majority'), h('option', { value: 'twothirds' }, 'Two-thirds')) as HTMLSelectElement;
   maj.value = c!.config.majority;
   const bulk = h('textarea', { rows: 6, placeholder: 'One delegate per line' }) as HTMLTextAreaElement;
   return h('div', { class: 'stack' },
-    h('form', { class: 'card form', onsubmit: (e: Event) => { e.preventDefault(); const n = store.get(id)!; n.name = name.value.trim() || n.name; n.conference = conf.value.trim(); n.config.speakTime = +st.value || 60; n.config.majority = maj.value as any; store.put(n); render(); } },
+    h('form', { class: 'card form', onsubmit: (e: Event) => { e.preventDefault(); const n = store.get(id)!; n.name = name.value.trim() || n.name; n.config.speakTime = +st.value || 60; n.config.majority = maj.value as any; store.put(n); render(); } },
       h('h2', null, 'committee'),
-      h('div', { class: 'fields' }, h('label', { class: 'field' }, h('span', null, 'Name'), name), h('label', { class: 'field' }, h('span', null, 'Conference'), conf),
-        h('label', { class: 'field' }, h('span', null, 'Speaking time (s)'), st), h('label', { class: 'field' }, h('span', null, 'Voting'), maj)),
+      h('div', { class: 'fields' }, h('label', { class: 'field' }, h('span', null, 'Name'), name), h('label', { class: 'field' }, h('span', null, 'Speaking time (s)'), st), h('label', { class: 'field' }, h('span', null, 'Voting'), maj)),
       h('div', { class: 'form-actions' }, h('button', { class: 'btn btn--primary' }, 'Save'))),
     h('form', { class: 'card form', onsubmit: (e: Event) => {
       e.preventDefault(); const n = store.get(id)!;
@@ -262,21 +263,26 @@ function setupTab() {
       store.put(n); render();
     } }, h('h2', null, 'delegates'), bulk, h('div', { class: 'form-actions' }, h('button', { class: 'btn btn--primary' }, 'Add'))),
     h('section', { class: 'card' }, h('h2', null, 'delegates'), h('div', { class: 'rows' }, ...c!.delegates.map((d) => h('div', { class: 'r' }, h('span', null, d.name),
-      btn('Remove', () => { if (confirm(`Remove ${d.name}? Their speeches and notes stay in the log.`)) { const n = store.get(id)!; n.delegates = n.delegates.filter((x) => x.id !== d.id); store.put(n); render(); } }, 'btn btn--danger btn--sm'))))),
+      btn('Remove', async () => { if (await askConfirm(`Remove ${d.name}?`, 'Their speeches and notes stay in the log.', 'Remove', true)) { const n = store.get(id)!; n.delegates = n.delegates.filter((x) => x.id !== d.id); store.put(n); render(); } }, 'btn btn--danger btn--sm'))))),
     h('section', { class: 'card' }, h('h2', null, 'data'), h('div', { class: 'btn-row' },
       btn('Download JSON', () => { const a = h('a', { href: URL.createObjectURL(new Blob([JSON.stringify(c, null, 2)], { type: 'application/json' })), download: `${c!.name}.json` }); a.click(); }),
-      btn('Delete committee', () => { if (confirm(`Delete ${c!.name} and its whole log?`)) { store.remove(id); location.href = '/'; } }, 'btn btn--danger btn--sm'))));
+      btn('Delete committee', async () => { if (await askDelete(`Delete ${c!.name}?`, 'Kept in Recently deleted for 30 days, then removed for good with its feedback and scores.')) { store.softDelete(id); location.href = c!.conferenceId ? `/conf/${c!.conferenceId}` : '/'; } }, 'btn btn--danger btn--sm'))));
 }
 
 function drawTools() {
-  const all = store.all();
-  const sel = h('select', { 'aria-label': 'Committee' }, ...all.map((x) => h('option', { value: x.id }, x.name)), h('option', { value: '__all' }, 'All committees…')) as HTMLSelectElement;
+  const mates = store.all(c!.conferenceId);
+  const list = mates.some((x) => x.id === id) ? mates : [...mates, c!];
+  const sel = h('select', { 'aria-label': 'Committee' }, ...list.map((x) => h('option', { value: x.id }, x.name)), h('option', { value: '__conf' }, 'This conference…'), h('option', { value: '__all' }, 'All conferences…')) as HTMLSelectElement;
   sel.value = id;
-  sel.onchange = () => { location.href = sel.value === '__all' ? '/' : `/c/${sel.value}`; };
+  sel.onchange = () => { location.href = sel.value === '__all' ? '/' : sel.value === '__conf' ? (c!.conferenceId ? `/conf/${c!.conferenceId}` : '/') : `/c/${sel.value}`; };
   const canUndo = effective(c!.events).length > 0;
   tools.replaceChildren(sel,
     btn('Undo', () => { const last = effective(store.get(id)!.events).at(-1); if (last) push('undo', { target: last.id }); }, 'btn btn--ghost btn--sm', { disabled: canUndo ? null : true }),
-    h('a', { class: 'btn btn--primary btn--sm', href: `/c/${id}/display`, target: 'display' }, 'Open display'));
+    h('a', { class: 'btn btn--primary btn--sm', href: `/c/${id}/display`, target: 'display' }, 'Open display'),
+    // Top right, blurred so the label can't be read from across the room. Click it, or press Enter, and it asks first.
+    (menu || tab !== 'floor')
+      ? h('button', { type: 'button', class: 'btn btn--ghost btn--sm', onclick: () => { tab = 'floor'; menu = false; picked = null; render(); } }, 'Hide backend')
+      : h('button', { type: 'button', class: 'backend', 'aria-label': 'Backend', onclick: askBackend }, 'Backend'));
 }
 
 let dlg: HTMLDialogElement | null = null;
@@ -309,13 +315,10 @@ function render() {
   const showTabs = menu || tab !== 'floor';
   // Hidden on purpose: feedback, scores and setup shouldn't be readable from across the room.
   app.replaceChildren(
-    h('div', { class: 'lead' }, h('h1', { class: 'title' }, c.name.toLowerCase()), c.conference ? h('p', { class: 'subtitle' }, c.conference) : null),
-    h('nav', { class: 'tabs', 'aria-label': 'Sections' },
-      ...(showTabs ? tabs.map(([k, label]) => h('button', { type: 'button', class: 'tab' + (k === tab ? ' tab--on' : ''), 'aria-current': k === tab ? 'page' : null, onclick: () => { tab = k; menu = k !== 'floor'; if (k !== 'delegates') picked = null; render(); } }, label)) : []),
-      showTabs
-        ? h('button', { type: 'button', class: 'peek', onclick: () => { tab = 'floor'; menu = false; picked = null; render(); } }, 'Hide backend')
-        // Blurred so the label can't be read from across the room. Click it, or press Enter, and it asks first.
-        : h('button', { type: 'button', class: 'backend', 'aria-label': 'Backend', onclick: askBackend }, 'Backend')),
+    h('div', { class: 'lead' }, c.conferenceId ? h('a', { class: 'crumb', href: `/conf/${c.conferenceId}` }, `← ${store.conf(c.conferenceId)?.name || c.conference || 'Conference'}`) : h('a', { class: 'crumb', href: '/' }, '← All conferences'), h('h1', { class: 'title' }, c.name.toLowerCase())),
+    showTabs ? h('nav', { class: 'tabs', 'aria-label': 'Sections' },
+      ...(showTabs ? tabs.map(([k, label]) => h('button', { type: 'button', class: 'tab' + (k === tab ? ' tab--on' : ''), 'aria-current': k === tab ? 'page' : null, onclick: () => { tab = k; menu = k !== 'floor'; if (k !== 'delegates') picked = null; render(); } }, label)) : [])) : null,
+
     body);
   tick();
 }

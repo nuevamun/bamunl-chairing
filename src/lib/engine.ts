@@ -33,7 +33,10 @@ export const DEFAULT_CONFIG: Config = {
 };
 
 export type Ev = { id: string; t: number; type: string; [k: string]: any };
-export type Committee = { id: string; name: string; conference: string; config: Config; delegates: Delegate[]; events: Ev[] };
+export type Committee = { id: string; name: string; conference: string; config: Config; delegates: Delegate[]; events: Ev[]; conferenceId?: string; /** ms; set when deleted, kept for TRASH_DAYS so it can be restored */ deletedAt?: number };
+export const TRASH_DAYS = 30;
+/** A conference holds committees. Deleting one hides its committees too; restoring brings them back. */
+export type Conference = { id: string; name: string; /** the club (school) that owns it; subadmins see only their own club's, the master sees all */ schoolId?: string; deletedAt?: number };
 
 export type Attendance = 'present' | 'pv' | 'absent';
 export type Mode = { kind: 'gsl' } | { kind: 'mod'; total: number; per: number; startedAt: number; label: string } | { kind: 'unmod'; total: number; startedAt: number; label: string };
@@ -201,7 +204,7 @@ export const clock = (sec: number) => {
 export const AWARD_CATEGORIES = ['Substance', 'Procedure', 'Diplomacy', 'Collaboration', 'Speaking'];
 export const NOTE_TAGS = ['Strength', 'Work on', 'Award', 'Follow up'];
 
-export function newCommittee(name: string, conference = ''): Committee {
-  return { id: uid(), name, conference, config: structuredClone(DEFAULT_CONFIG), delegates: [], events: [] };
+export function newCommittee(name: string, conference = '', conferenceId?: string): Committee {
+  return { id: uid(), name, conference, conferenceId, config: structuredClone(DEFAULT_CONFIG), delegates: [], events: [] };
 }
 export const ev = (type: string, rest: Record<string, any> = {}): Ev => ({ id: uid(), t: Date.now(), type, ...rest });
