@@ -6,7 +6,7 @@ import { h, $ } from '../lib/ui';
 const id = location.pathname.split('/')[2];
 const app = document.getElementById('app')!;
 const tools = document.getElementById('bar-tools')!;
-type Tab = 'floor' | 'roll' | 'delegates' | 'log' | 'setup';
+type Tab = 'floor' | 'roll' | 'delegates' | 'setup';
 let tab: Tab = 'floor';
 let picked: string | null = null;     // delegate open on the Delegates tab
 let c: Committee | undefined;
@@ -159,11 +159,22 @@ function motionCard() {
   });
   return h('section', { class: 'card' }, h('h2', null, 'motions'), form,
     pool.length ? h('div', { class: 'pool' }, h('div', { class: 'card-head' }, h('h3', null, 'proposed'), s.proposed.length > 1 ? btn('Clear all', () => push('clear_proposed'), 'btn btn--ghost btn--xs') : null), h('ul', { class: 'proposals' }, ...pool),
-      h('p', { class: 'muted small' }, 'Vote counts are optional.')) : null);
+      h('p', { class: 'muted small' }, 'Vote counts are optional.')) : null,
+    history());
+}
+
+/** Everything proposed so far, newest first. Lives under the motions form so it needs no tab of its own. */
+function history() {
+  if (!s.motions.length) return null;
+  const rows = [...s.motions].reverse().map((m) => h('li', { class: 'past' },
+    h('span', { class: 'past-name' }, m.label, h('span', { class: 'muted' }, [paramText(m), m.by ? `by ${nameOf(m.by)}` : ''].filter(Boolean).map((x) => ' · ' + x).join(''))),
+    h('span', { class: 'past-res past-res--' + m.result }, m.result === 'withdrawn' ? 'not voted' : m.result,
+      m.result !== 'withdrawn' && (m.yes || m.no || m.abstain) ? ` ${m.yes}–${m.no}–${m.abstain}` : '')));
+  return h('details', { class: 'pool', open: s.motions.length <= 6 }, h('summary', null, `Proposed so far (${s.motions.length})`), h('ul', { class: 'pasts' }, ...rows));
 }
 
 function floorTab() {
-  return h('div', { class: 'grid-floor' }, speakerCard(), listCard(), motionCard());
+  return h('div', { class: 'grid-floor' }, speakerCard(), motionCard(), listCard());
 }
 
 function rollTab() {
@@ -215,13 +226,6 @@ function detail(d: string) {
     mine.length ? h('ul', { class: 'notes' }, ...mine.map((x) => h('li', null, `${clock(x.used)} of ${clock(x.allotted)}`, x.over ? `, ${clock(x.over)} over` : `, ${clock(x.left)} left`, x.end === 'chair' ? ', yielded to chair' : x.end === 'questions' ? ', yielded to questions' : '', x.mode === 'mod' ? ', moderated' : ''))) : h('p', { class: 'empty' }, 'None yet.'));
 }
 
-function logTab() {
-  const rows = [...s.motions].reverse().map((m) => h('tr', null, h('td', null, new Date(m.t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })), h('td', null, m.label), h('td', null, paramText(m)), h('td', null, m.by ? nameOf(m.by) : '—'), h('td', null, m.result === 'withdrawn' || (!m.yes && !m.no && !m.abstain) ? '—' : `${m.yes}–${m.no}–${m.abstain}`), h('td', null, m.result === 'withdrawn' ? 'not voted' : m.result)));
-  return h('section', { class: 'card' }, h('h2', null, 'proposed motions'),
-    h('div', { class: 'sheet-wrap' }, h('table', { class: 'sheet' }, h('thead', null, h('tr', null, ...['Time', 'Motion', 'Details', 'Proposed by', 'For–Against–Abstain', 'Result'].map((t) => h('th', null, t)))),
-      h('tbody', null, ...rows, rows.length ? null : h('tr', null, h('td', { colspan: 6, class: 'empty' }, 'None yet.'))))));
-}
-
 function setupTab() {
   const name = h('input', { type: 'text', value: c!.name }) as HTMLInputElement;
   const conf = h('input', { type: 'text', value: c!.conference }) as HTMLInputElement;
@@ -264,8 +268,8 @@ function render() {
   s = derive(c);
   drawTools();
   document.title = `${c.name} · BAMUNL Chairing`;
-  const tabs: Array<[Tab, string]> = [['floor', 'Floor'], ['roll', 'Roll call'], ['delegates', 'Delegates'], ['log', 'Motions'], ['setup', 'Setup']];
-  const body = { floor: floorTab, roll: rollTab, delegates: delegatesTab, log: logTab, setup: setupTab }[tab]();
+  const tabs: Array<[Tab, string]> = [['floor', 'Floor'], ['roll', 'Roll call'], ['delegates', 'Delegates'], ['setup', 'Setup']];
+  const body = { floor: floorTab, roll: rollTab, delegates: delegatesTab, setup: setupTab }[tab]();
   app.replaceChildren(
     h('div', { class: 'lead' }, h('h1', { class: 'title' }, c.name.toLowerCase()), c.conference ? h('p', { class: 'subtitle' }, c.conference) : null),
     h('nav', { class: 'tabs', 'aria-label': 'Sections' }, ...tabs.map(([k, label]) => h('button', { type: 'button', class: 'tab' + (k === tab ? ' tab--on' : ''), 'aria-current': k === tab ? 'page' : null, onclick: () => { tab = k; render(); } }, label))),
