@@ -206,7 +206,7 @@ export function derive(c: Committee): State {
         const f = s.proposed.find((m) => m.id === e.target) ?? (e.target ? undefined : s.proposed[0]);
         if (!f) break;
         const ok = e.result ? e.result === 'passed' : passes(majorityFor(c.config, f.key), e.yes ?? 0, e.no ?? 0);
-        s.motions.push({ ...f, yes: e.yes ?? 0, no: e.no ?? 0, abstain: e.abstain ?? 0, result: ok ? 'passed' : 'failed', t: e.t });
+        s.motions.push({ ...f, yes: e.yes ?? 0, no: e.no ?? 0, abstain: 0, result: ok ? 'passed' : 'failed', t: e.t });   // procedural motions have no abstentions
         s.proposed = s.proposed.filter((m) => m !== f);
         if (!ok) break;
         // Something passed, so the floor is reset: motions still waiting are moot and are logged as not voted.

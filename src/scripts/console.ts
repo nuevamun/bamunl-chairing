@@ -21,7 +21,7 @@ const push = (type: string, rest: Record<string, any> = {}) => { store.append(id
 const nameOf = (d: string) => c!.delegates.find((x) => x.id === d)?.name ?? '?';
 const here = (d: string) => (s.attendance[d] ?? 'absent') !== 'absent';
 const btn = (label: string, fn: () => void, cls = 'btn btn--ghost btn--sm', extra: Record<string, any> = {}) => h('button', { type: 'button', class: cls, onclick: fn, ...extra }, label);
-const num = (name: string, v: number, label: string) => h('label', { class: 'field field--tight' }, h('span', null, label), h('input', { type: 'number', name, value: v, min: 0, step: 1, inputmode: 'numeric' }));
+const num = (name: string, v: number, label: string) => h('label', { class: 'field field--tight' }, h('span', null, label), h('input', { type: 'number', name, value: v, min: 0, step: 'any', inputmode: 'decimal' }));
 
 let clockEl: HTMLElement | null = null, barEl: HTMLElement | null = null, capEl: HTMLElement | null = null;
 
@@ -202,7 +202,7 @@ function motionCard() {
       e.preventDefault();
       const params: Record<string, number> = {};
       fields.querySelectorAll('input').forEach((i) => { params[(i as HTMLInputElement).name] = +(i as HTMLInputElement).value || 0; });
-      if (m.key === 'other' && !name.value.trim()) { name.focus(); return; }
+      if (m.key === 'other' && !name.value.trim()) { problem.textContent = 'Name the motion.'; problem.hidden = false; name.focus(); return; }
       if (m.effect === 'mod') { const bad = checkMod(params.total ?? 0, params.per ?? 0); if (bad) { problem.textContent = bad; problem.hidden = false; return; } }
       proposing = null;
       push('floor', { key: m.key, params, by, ...(hasTopic(m) ? { topic: topic.value.trim() } : {}), ...(m.key === 'other' ? { name: name.value.trim() } : {}) });
@@ -222,11 +222,10 @@ function motionCard() {
     if (amending === m.id) return amendForm(m);
     const yes = h('input', { type: 'number', min: 0, inputmode: 'numeric', placeholder: 'For', 'aria-label': 'For' }) as HTMLInputElement;
     const no = h('input', { type: 'number', min: 0, inputmode: 'numeric', placeholder: 'Against', 'aria-label': 'Against' }) as HTMLInputElement;
-    const ab = h('input', { type: 'number', min: 0, inputmode: 'numeric', placeholder: 'Abstain', 'aria-label': 'Abstain' }) as HTMLInputElement;
-    const decide = (result: 'passed' | 'failed') => push('vote', { target: m.id, result, yes: +yes.value || 0, no: +no.value || 0, abstain: +ab.value || 0 });
+    const decide = (result: 'passed' | 'failed') => push('vote', { target: m.id, result, yes: +yes.value || 0, no: +no.value || 0 });
     return h('li', { class: 'proposal' },
       h('div', { class: 'proposal-top' }, h('strong', null, m.label), reminder(m.key) ? h('span', { class: 'reminder' }, reminder(m.key)) : null, h('span', { class: 'muted' }, [topicText(m), paramText(m), m.by ? `by ${nameOf(m.by)}` : '', m.amended ? 'amended' : '', i === 0 && s.proposed.length > 1 ? 'first in order' : ''].filter(Boolean).join(' · '))),
-      h('div', { class: 'proposal-votes' }, yes, no, ab),
+      h('div', { class: 'proposal-votes' }, yes, no),
       h('div', { class: 'btn-row' }, btn('Passed', () => decide('passed')), btn('Failed', () => decide('failed')), btn('Amend', () => { amending = m.id; render(); }), btn('Withdraw', () => push('withdraw', { target: m.id }))));
   });
   return h('section', { class: 'card' }, h('h2', null, 'the floor'), picker, form,
@@ -239,7 +238,7 @@ function motionRecord() {
   const rows = [...s.motions].reverse().map((m) => h('li', { class: 'past' },
     h('span', { class: 'past-name' }, m.label, h('span', { class: 'muted' }, [topicText(m), paramText(m), m.by ? `by ${nameOf(m.by)}` : '', m.amended ? 'amended' : ''].filter(Boolean).map((x) => ' · ' + x).join(''))),
     h('span', { class: 'past-res past-res--' + m.result }, m.result === 'withdrawn' ? 'not voted' : m.result,
-      m.result !== 'withdrawn' && (m.yes || m.no || m.abstain) ? ` ${m.yes}–${m.no}–${m.abstain}` : '')));
+      m.result !== 'withdrawn' && (m.yes || m.no) ? ` ${m.yes}–${m.no}${m.abstain ? `–${m.abstain}` : ''}` : '')));
   return h('section', { class: 'card' }, h('h2', null, 'proposed motions'), rows.length ? h('ul', { class: 'pasts' }, ...rows) : h('p', { class: 'empty' }, 'None yet.'));
 }
 
