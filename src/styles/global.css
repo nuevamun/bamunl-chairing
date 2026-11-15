@@ -309,8 +309,7 @@ button.chip-btn--on.chip-btn--away { color: #fff; }
 button.chip-btn:disabled { opacity: .45; cursor: not-allowed; }
 .chip-n { display: inline-grid; place-items: center; min-width: 1.4rem; height: 1.4rem; border-radius: 50%; background: var(--sky); color: var(--twilight-deep); font-size: .8rem; }
 button.chip-btn small { color: inherit; opacity: .7; }
-button.backend { font: inherit; font-weight: 700; font-size: .9375rem; padding: .5rem 1rem; border: 2px solid var(--rule); border-radius: 999px; background: var(--paper); color: var(--ink-soft); cursor: pointer; filter: blur(5px); user-select: none; }
-button.backend:focus-visible { filter: blur(5px); }
+button.backend { font: inherit; font-weight: 700; font-size: .9375rem; padding: .5rem 1rem; border: 2px solid var(--rule); border-radius: 999px; background: var(--paper); color: var(--ink-soft); cursor: pointer; }
 button.peek { letter-spacing: 0; font-size: .9rem; color: var(--ink-soft); }
 
 /* dashboard */

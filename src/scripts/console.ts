@@ -279,7 +279,7 @@ function drawTools() {
   tools.replaceChildren(sel,
     btn('Undo', () => { const last = effective(store.get(id)!.events).at(-1); if (last) push('undo', { target: last.id }); }, 'btn btn--ghost btn--sm', { disabled: canUndo ? null : true }),
     h('a', { class: 'btn btn--primary btn--sm', href: `/c/${id}/display`, target: 'display' }, 'Open display'),
-    // Top right, blurred so the label can't be read from across the room. Click it, or press Enter, and it asks first.
+    // Top right. Click it, or press Enter, and it asks first.
     (menu || tab !== 'floor')
       ? h('button', { type: 'button', class: 'btn btn--ghost btn--sm', onclick: () => { tab = 'floor'; menu = false; picked = null; render(); } }, 'Hide backend')
       : h('button', { type: 'button', class: 'backend', 'aria-label': 'Backend', onclick: askBackend }, 'Backend'));
