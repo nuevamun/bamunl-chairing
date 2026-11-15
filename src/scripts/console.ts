@@ -159,7 +159,7 @@ function amendForm(m: { id: string; key: string; label: string; params: Record<s
   const problem = h('p', { class: 'flash flash--err', role: 'alert', hidden: true });
   const topic = h('input', { type: 'text', value: m.topic ?? '', autocomplete: 'off', 'aria-label': 'Topic' }) as HTMLInputElement;
   let by = '';
-  const owner = combo(delegateOpts().map((o) => ({ ...o, off: false })), (o) => { by = o.id; owner.input.value = o.name; }, 'New owner', 'Type a name…');
+  const owner = combo(delegateOpts().map((o) => ({ ...o, off: false })), (o) => { by = o.id; owner.input.value = o.name; }, 'Proposed by', 'Type a name…');
   owner.input.addEventListener('input', () => { by = ''; });
   return h('li', { class: 'proposal proposal--amend' },
     h('div', { class: 'proposal-top' }, h('strong', null, 'Amend'), h('span', { class: 'muted' }, m.label)),
@@ -175,16 +175,16 @@ function amendForm(m: { id: string; key: string; label: string; params: Record<s
       hasTopic(type) ? h('label', { class: 'field field--tight' }, h('span', null, 'Topic'), topic) : null,
       fields,
       problem,
-      h('div', { class: 'field field--tight' }, h('span', null, `Owner (now ${m.by ? nameOf(m.by) : 'no one'})`), owner),
+      h('div', { class: 'field field--tight' }, h('span', null, 'Proposed by'), owner, h('small', { class: 'muted' }, `${m.by ? `Currently ${nameOf(m.by)}.` : 'Nobody was named when it was proposed.'} Pick who proposed the amendment: they become its proposer.`)),
       h('div', { class: 'btn-row' }, h('button', { class: 'btn btn--primary btn--sm' }, 'Save amendment'), btn('Cancel', () => { amending = null; render(); }))));
 }
 
 let proposing: string | null = null;      // which kind of motion is being opened; null = none
 
 function motionCard() {
-  // The motion types, most disruptive first, in a dropdown. Choosing one opens the floor for it.
+  // The motion types, most disruptive first, in a dropdown. Choosing one opens its form.
   const types = motionTypes(c!.config);
-  const picker = combo(types.map((t) => ({ id: t.key, name: t.label, off: false, note: '' })), (o) => { proposing = o.id; render(); }, 'Open the floor for a motion', 'Choose a motion…', false, true);
+  const picker = combo(types.map((t) => ({ id: t.key, name: t.label, off: false, note: '' })), (o) => { proposing = o.id; render(); }, 'Choose a motion', 'Choose a motion…', false, true);
   if (proposing) picker.input.value = types.find((t) => t.key === proposing)?.label ?? '';
 
   let form: HTMLElement | null = null;
@@ -214,7 +214,7 @@ function motionCard() {
       fs.length ? fields : null,
       problem,
       h('div', { class: 'field field--tight' }, h('span', null, 'Proposed by (optional)'), owner),
-      h('div', { class: 'btn-row' }, h('button', { class: 'btn btn--primary btn--sm' }, 'Open the floor'), btn('Cancel', () => { proposing = null; render(); })));
+      h('div', { class: 'btn-row' }, h('button', { class: 'btn btn--primary btn--sm' }, 'Propose'), btn('Cancel', () => { proposing = null; render(); })));
   }
 
   // The pool: pick which to take up, and say whether it passed or failed.
@@ -227,7 +227,7 @@ function motionCard() {
     return h('li', { class: 'proposal' },
       h('div', { class: 'proposal-top' }, h('strong', null, m.label), reminder(m.key) ? h('span', { class: 'reminder' }, reminder(m.key)) : null, h('span', { class: 'muted' }, [topicText(m), paramText(m), m.by ? `by ${nameOf(m.by)}` : '', m.amended ? 'amended' : '', i === 0 && s.proposed.length > 1 ? 'first in order' : ''].filter(Boolean).join(' · '))),
       h('div', { class: 'proposal-votes' }, yes, no, ab),
-      h('div', { class: 'btn-row' }, btn('Passed', () => decide('passed'), 'btn btn--primary btn--sm'), btn('Failed', () => decide('failed')), btn('Amend', () => { amending = m.id; render(); }), btn('Withdraw', () => push('withdraw', { target: m.id }))));
+      h('div', { class: 'btn-row' }, btn('Passed', () => decide('passed')), btn('Failed', () => decide('failed')), btn('Amend', () => { amending = m.id; render(); }), btn('Withdraw', () => push('withdraw', { target: m.id }))));
   });
   return h('section', { class: 'card' }, h('h2', null, 'the floor'), picker, form,
     pool.length ? h('div', { class: 'pool' }, h('div', { class: 'card-head' }, h('h3', null, 'proposed'), s.proposed.length > 1 ? btn('Clear all', () => push('clear_proposed'), 'btn btn--ghost btn--xs') : null), h('ul', { class: 'proposals' }, ...pool),
