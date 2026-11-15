@@ -24,6 +24,8 @@ export const DEFAULT_CONFIG: Config = {
   speakTime: 60,
   majority: 'simple',
   motions: [
+    { key: 'suspend', label: 'Suspend the meeting', effect: 'none', fields: [{ key: 'time', label: 'Time', unit: 'min', def: 0 }] },
+    { key: 'adjourn', label: 'Adjourn the meeting', effect: 'none', fields: [] },
     { key: 'unmod', label: 'Unmoderated caucus', effect: 'unmod', fields: [{ key: 'total', label: 'Total', unit: 'min', def: 10 }] },
     { key: 'mod', label: 'Moderated caucus', effect: 'mod', fields: [{ key: 'total', label: 'Total', unit: 'min', def: 10 }, { key: 'per', label: 'Per speaker', unit: 's', def: 45 }] },
     { key: 'speaktime', label: 'Change speaking time', effect: 'speaktime', fields: [{ key: 'per', label: 'Per speaker', unit: 's', def: 45 }] },
@@ -31,6 +33,18 @@ export const DEFAULT_CONFIG: Config = {
     { key: 'other', label: 'Other motion', effect: 'none', fields: [{ key: 'time', label: 'Time', unit: 'min', def: 0 }] },
   ],
 };
+
+/**
+ * The motion types in precedence order, most disruptive first. Committees saved before a type existed
+ * still get it, and a type a conference added of its own goes after the standard ones.
+ */
+export function motionTypes(config: Config): MotionType[] {
+  const mine = new Map(config.motions.map((m) => [m.key, m]));
+  const std = DEFAULT_CONFIG.motions.map((d) => mine.get(d.key) ?? d);
+  const own = config.motions.filter((m) => !DEFAULT_CONFIG.motions.some((d) => d.key === m.key));
+  const other = std.filter((m) => m.key === 'other'), rest = std.filter((m) => m.key !== 'other');
+  return [...rest, ...own, ...other];       // "other" is always last
+}
 
 export type Ev = { id: string; t: number; type: string; [k: string]: any };
 export type Committee = { id: string; name: string; conference: string; config: Config; delegates: Delegate[]; events: Ev[]; conferenceId?: string; /** ms; set when deleted, kept for TRASH_DAYS so it can be restored */ deletedAt?: number };
@@ -137,9 +151,9 @@ export function derive(c: Committee): State {
       case 'resume': if (s.speaking && s.speaking.since == null) s.speaking.since = e.t; break;
       case 'stop': finish(e, e.how ?? 'done', e.to); break;
       case 'floor': {
-        const type = c.config.motions.find((m) => m.key === e.key);
+        const type = motionTypes(c.config).find((m) => m.key === e.key);
         s.proposed.push({ id: e.id, key: e.key, label: (e.name && String(e.name).trim()) || type?.label || e.key, params: e.params ?? {}, note: e.note ?? '', by: e.by ?? '' });
-        const rank = (m: Floor) => { const i = c.config.motions.findIndex((x) => x.key === m.key); return i < 0 ? 999 : i; };
+        const rank = (m: Floor) => { const i = motionTypes(c.config).findIndex((x) => x.key === m.key); return i < 0 ? 999 : i; };
         s.proposed.sort((x, y) => rank(x) - rank(y));   // stable: same kind stays in the order proposed
         break;
       }
@@ -170,7 +184,7 @@ export function derive(c: Committee): State {
         s.motions.push({ ...f, yes: e.yes ?? 0, no: e.no ?? 0, abstain: e.abstain ?? 0, result: ok ? 'passed' : 'failed', t: e.t });
         s.proposed = s.proposed.filter((m) => m !== f);
         if (!ok) break;
-        const type = c.config.motions.find((m) => m.key === f.key);
+        const type = motionTypes(c.config).find((m) => m.key === f.key);
         if (type?.effect === 'mod') { s.mode = { kind: 'mod', total: (f.params.total ?? 0) * 60, per: f.params.per ?? 45, startedAt: null, label: f.label, proposer: f.by, slot: f.by ? '' : 'none', lastD: '' }; s.lists.mod = []; }
         else if (type?.effect === 'unmod') s.mode = { kind: 'unmod', total: (f.params.total ?? 0) * 60, startedAt: e.t, label: f.label };
         else if (type?.effect === 'speaktime') s.speakTime = f.params.per ?? s.speakTime;

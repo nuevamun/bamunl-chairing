@@ -1,6 +1,6 @@
 // The chair console: the back of the room. Everything here writes events; nothing mutates state directly.
 import { store } from '../lib/store';
-import { derive, statsFor, elapsed, clock, ev, uid, effective, AWARD_CATEGORIES, NOTE_TAGS, type Committee, type State, type Attendance } from '../lib/engine';
+import { derive, statsFor, motionTypes, elapsed, clock, ev, uid, effective, AWARD_CATEGORIES, NOTE_TAGS, type Committee, type State, type Attendance } from '../lib/engine';
 import { h, $, mount } from '../lib/ui';
 import { askConfirm } from '../lib/confirm';
 import { askDelete } from '../lib/guard';
@@ -138,7 +138,7 @@ function listCard() {
 }
 
 const paramText = (m: { key: string; params: Record<string, number> }) => {
-  const fields = c!.config.motions.find((x) => x.key === m.key)?.fields ?? [];
+  const fields = motionTypes(c!.config).find((x) => x.key === m.key)?.fields ?? [];
   return Object.entries(m.params).filter(([, v]) => v > 0 || m.key !== 'other').map(([k, v]) => {
     const f = fields.find((x) => x.key === k);
     return `${f?.label ?? k} ${v}${f?.unit ? ' ' + f.unit : ''}`;
@@ -147,7 +147,7 @@ const paramText = (m: { key: string; params: Record<string, number> }) => {
 
 /** Edit a proposed motion. Whoever proposes the amendment becomes its owner. */
 function amendForm(m: { id: string; key: string; label: string; params: Record<string, number>; by: string }) {
-  const type = c!.config.motions.find((x) => x.key === m.key);
+  const type = motionTypes(c!.config).find((x) => x.key === m.key);
   const fs = m.key === 'other' && !type?.fields.length ? [{ key: 'time', label: 'Time', unit: 'min' as const, def: 0 }] : (type?.fields ?? []);
   const fields = h('div', { class: 'fields fields--3' }, ...fs.map((f) => num(f.key, m.params[f.key] ?? f.def, `${f.label}${f.unit ? ' (' + f.unit + ')' : ''}`)));
   const name = h('input', { type: 'text', value: m.label, autocomplete: 'off', 'aria-label': 'Motion name' }) as HTMLInputElement;
@@ -169,34 +169,37 @@ function amendForm(m: { id: string; key: string; label: string; params: Record<s
       h('div', { class: 'btn-row' }, h('button', { class: 'btn btn--primary btn--sm' }, 'Save amendment'), btn('Cancel', () => { amending = null; render(); }))));
 }
 
-function motionCard() {
-  // Propose: a motion goes into the pool. Nothing has to be voted on straight away.
-  const type = h('select', { name: 'type', 'aria-label': 'Motion' }, ...c!.config.motions.map((m) => h('option', { value: m.key }, m.label))) as HTMLSelectElement;
-  const name = h('input', { type: 'text', name: 'name', placeholder: 'What is the motion?', autocomplete: 'off', 'aria-label': 'Motion name' }) as HTMLInputElement;
-  const nameField = h('label', { class: 'field field--tight field--wide' }, h('span', null, 'Name'), name);
-  const fields = h('div', { class: 'fields fields--3' });
-  let by = '';
-  const byBox = h('div', { class: 'field field--tight' }, h('span', null, 'Proposed by (optional)'));
-  const drawBy = () => {
-    const pickerEl = combo(delegateOpts().map((o) => ({ ...o, off: false })), (o) => { by = o.id; pickerEl.input.value = o.name; }, 'Proposed by', 'Type a name…');
-    pickerEl.input.addEventListener('input', () => { by = ''; });
-    byBox.replaceChildren(byBox.firstChild!, pickerEl);
-  };
-  const draw = () => {
-    const m = c!.config.motions.find((x) => x.key === type.value)!;
-    nameField.hidden = m.key !== 'other';
-    const fs = m.key === 'other' && !m.fields.length ? [{ key: 'time', label: 'Time', unit: 'min' as const, def: 0 }] : m.fields;
-    fields.replaceChildren(...fs.map((f) => num(f.key, f.def, `${f.label}${f.unit ? ' (' + f.unit + ')' : ''}`)));
-  };
-  type.onchange = draw; draw(); drawBy();
+let proposing: string | null = null;      // which kind of motion is being opened; null = none
 
-  const form = h('form', { class: 'form', onsubmit: (e: Event) => {
-    e.preventDefault();
-    const params: Record<string, number> = {};
-    fields.querySelectorAll('input').forEach((i) => { params[(i as HTMLInputElement).name] = +(i as HTMLInputElement).value || 0; });
-    if (type.value === 'other' && !name.value.trim()) { name.focus(); return; }
-    push('floor', { key: type.value, params, by, ...(type.value === 'other' ? { name: name.value.trim() } : {}) });
-  } }, type, nameField, fields, byBox, h('button', { class: 'btn btn--primary btn--sm' }, 'Propose'));
+function motionCard() {
+  // The motion types, most disruptive first. Press one to open the floor for it.
+  const types = motionTypes(c!.config);
+  const picker = h('div', { class: 'motion-btns', role: 'group', 'aria-label': 'Open the floor for a motion' },
+    ...types.map((t) => h('button', { type: 'button', class: 'motion-btn' + (proposing === t.key ? ' motion-btn--on' : ''), 'aria-pressed': String(proposing === t.key), onclick: () => { proposing = proposing === t.key ? null : t.key; render(); } }, t.label)));
+
+  let form: HTMLElement | null = null;
+  if (proposing) {
+    const m = types.find((x) => x.key === proposing) ?? types[0];
+    const name = h('input', { type: 'text', name: 'name', placeholder: 'What is the motion?', autocomplete: 'off', 'aria-label': 'Motion name' }) as HTMLInputElement;
+    const fs = m.key === 'other' && !m.fields.length ? [{ key: 'time', label: 'Time', unit: 'min' as const, def: 0 }] : m.fields;
+    const fields = h('div', { class: 'fields fields--3' }, ...fs.map((f) => num(f.key, f.def, `${f.label}${f.unit ? ' (' + f.unit + ')' : ''}`)));
+    let by = '';
+    const owner = combo(delegateOpts().map((o) => ({ ...o, off: false })), (o) => { by = o.id; owner.input.value = o.name; }, 'Proposed by', 'Type a name…');
+    owner.input.addEventListener('input', () => { by = ''; });
+    form = h('form', { class: 'form motion-form', onsubmit: (e: Event) => {
+      e.preventDefault();
+      const params: Record<string, number> = {};
+      fields.querySelectorAll('input').forEach((i) => { params[(i as HTMLInputElement).name] = +(i as HTMLInputElement).value || 0; });
+      if (m.key === 'other' && !name.value.trim()) { name.focus(); return; }
+      proposing = null;
+      push('floor', { key: m.key, params, by, ...(m.key === 'other' ? { name: name.value.trim() } : {}) });
+    } },
+      h('strong', null, m.label),
+      m.key === 'other' ? h('label', { class: 'field field--tight' }, h('span', null, 'Name'), name) : null,
+      fs.length ? fields : null,
+      h('div', { class: 'field field--tight' }, h('span', null, 'Proposed by (optional)'), owner),
+      h('div', { class: 'btn-row' }, h('button', { class: 'btn btn--primary btn--sm' }, 'Open the floor'), btn('Cancel', () => { proposing = null; render(); })));
+  }
 
   // The pool: pick which to take up, and say whether it passed or failed.
   const pool = s.proposed.map((m, i) => {
@@ -210,7 +213,7 @@ function motionCard() {
       h('div', { class: 'proposal-votes' }, yes, no, ab),
       h('div', { class: 'btn-row' }, btn('Passed', () => decide('passed'), 'btn btn--primary btn--sm'), btn('Failed', () => decide('failed')), btn('Amend', () => { amending = m.id; render(); }), btn('Withdraw', () => push('withdraw', { target: m.id }))));
   });
-  return h('section', { class: 'card' }, h('h2', null, 'motions'), form,
+  return h('section', { class: 'card' }, h('h2', null, 'motions'), picker, form,
     pool.length ? h('div', { class: 'pool' }, h('div', { class: 'card-head' }, h('h3', null, 'proposed'), s.proposed.length > 1 ? btn('Clear all', () => push('clear_proposed'), 'btn btn--ghost btn--xs') : null), h('ul', { class: 'proposals' }, ...pool),
       h('p', { class: 'muted small' }, 'Vote counts are optional.')) : null,
     history());

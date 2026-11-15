@@ -333,3 +333,9 @@ input[type=number] { -moz-appearance: textfield; appearance: textfield; }
 input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .proposal--amend { border-color: var(--twilight); background: var(--fog); }
 .ask { padding: .75rem 1rem; margin-bottom: 1rem; border-left: 5px solid var(--twilight); background: var(--fog); display: grid; gap: .6rem; }
+
+/* motion types as buttons, most disruptive first */
+.motion-btns { display: flex; flex-wrap: wrap; gap: .5rem; }
+button.motion-btn { font: inherit; font-weight: 700; font-size: .9375rem; padding: .5rem 1rem; border: 2px solid var(--twilight); border-radius: 999px; background: var(--paper); color: var(--twilight); cursor: pointer; }
+button.motion-btn:hover, button.motion-btn.motion-btn--on { background: var(--twilight); color: #fff; }
+.motion-form { margin-top: 1rem; padding: 1rem; border-left: 5px solid var(--twilight); background: var(--fog); }

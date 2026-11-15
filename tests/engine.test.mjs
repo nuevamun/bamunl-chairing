@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { derive, statsFor, newCommittee, passes } from '../src/lib/engine.ts';
+import { derive, statsFor, newCommittee, passes, motionTypes } from '../src/lib/engine.ts';
 
 const mk = () => { const c = newCommittee('UNSC'); c.delegates = [{ id: 'a', name: 'France' }, { id: 'b', name: 'Peru' }]; return c; };
 let n = 0;
@@ -98,4 +98,11 @@ test('proposer can speak first, or skip', () => {
   const d = mk();
   E(d, 0, 'floor', { key: 'mod', params: { total: 5, per: 30 }, by: 'a' }); E(d, 1, 'vote', { result: 'passed' }); E(d, 2, 'proposer_slot', { slot: 'none' });
   assert.deepEqual(derive(d).lists.mod, []);
+});
+
+test('motion types run most to least disruptive, "other" last, and old committees get the new types', () => {
+  const old = { speakTime: 60, majority: 'simple', motions: [{ key: 'close', label: 'Close the speakers list', effect: 'close', fields: [] }, { key: 'mod', label: 'Moderated caucus', effect: 'mod', fields: [] }, { key: 'custom', label: 'Our own', effect: 'none', fields: [] }] };
+  const keys = motionTypes(old).map((m) => m.key);
+  assert.deepEqual(keys, ['suspend', 'adjourn', 'unmod', 'mod', 'speaktime', 'close', 'custom', 'other']);
+  assert.equal(motionTypes(old).find((m) => m.key === 'close').label, 'Close the speakers list');   // their own version wins
 });

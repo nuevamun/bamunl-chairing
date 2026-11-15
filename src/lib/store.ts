@@ -14,10 +14,11 @@ class Store {
     this.chan?.addEventListener('message', () => this.fns.forEach((f) => f()));
     addEventListener('storage', (e) => { if (e.key === CK || e.key === FK) this.fns.forEach((f) => f()); });
   }
-  private write(key: string, list: unknown[]) {
+  /** `quiet` is for data that just arrived from the database: it isn't a local change, so it must not trigger another sync. */
+  private write(key: string, list: unknown[], quiet = false) {
     try { localStorage.setItem(key, JSON.stringify(list)); } catch { /* storage full or blocked: stays in memory only */ }
     this.chan?.postMessage('changed');
-    dispatchEvent(new Event('chairing:dirty'));
+    if (!quiet) dispatchEvent(new Event('chairing:dirty'));
   }
   subscribe(fn: () => void) { this.fns.push(fn); }
 
@@ -34,7 +35,11 @@ class Store {
   }
   everything() { return rd<Committee>(CK); }
   get(id: string) { return rd<Committee>(CK).find((c) => c.id === id); }   // includes deleted ones, so an old link still opens
-  put(c: Committee) { const l = rd<Committee>(CK); const i = l.findIndex((x) => x.id === c.id); if (i >= 0) l[i] = c; else l.push(c); this.write(CK, l); }
+  put(c: Committee, quiet = false) {
+    const l = rd<Committee>(CK); const i = l.findIndex((x) => x.id === c.id);
+    if (i >= 0) { if (JSON.stringify(l[i]) === JSON.stringify(c)) return; l[i] = c; } else l.push(c);   // unchanged: nothing to write
+    this.write(CK, l, quiet);
+  }
   /** Permanent. Only the 30-day purge and "delete now" call this. */
   remove(id: string) { this.write(CK, rd<Committee>(CK).filter((c) => c.id !== id)); }
   softDelete(id: string) { const c = this.get(id); if (c) { c.deletedAt = Date.now(); this.put(c); } }
@@ -46,7 +51,11 @@ class Store {
   confTrash(): Conference[] { return rd<Conference>(FK).filter((f) => f.deletedAt); }
   confEverything() { return rd<Conference>(FK); }
   conf(id: string) { return rd<Conference>(FK).find((f) => f.id === id); }
-  putConf(f: Conference) { const l = rd<Conference>(FK); const i = l.findIndex((x) => x.id === f.id); if (i >= 0) l[i] = f; else l.push(f); this.write(FK, l); }
+  putConf(f: Conference, quiet = false) {
+    const l = rd<Conference>(FK); const i = l.findIndex((x) => x.id === f.id);
+    if (i >= 0) { if (JSON.stringify(l[i]) === JSON.stringify(f)) return; l[i] = f; } else l.push(f);
+    this.write(FK, l, quiet);
+  }
   softDeleteConf(id: string) { const f = this.conf(id); if (f) { f.deletedAt = Date.now(); this.putConf(f); } }
   restoreConf(id: string) { const f = this.conf(id); if (f) { delete f.deletedAt; this.putConf(f); } }
   /** Permanent: the conference and every committee in it. */

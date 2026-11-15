@@ -1,6 +1,6 @@
 // The forward-facing screen: what delegates see. Never shows notes, scores or any per-delegate feedback.
 import { store } from '../lib/store';
-import { derive, elapsed, clock, type Committee } from '../lib/engine';
+import { derive, elapsed, clock, motionTypes, type Committee } from '../lib/engine';
 import { h, mount } from '../lib/ui';
 
 const id = location.pathname.split('/')[2];
@@ -19,7 +19,7 @@ function render() {
     s.mode.kind === 'gsl' ? (s.closed ? 'Speakers list (closed)' : 'Speakers list') : s.mode.label))];
   if (s.proposed.length) {
     const text = (m: typeof s.proposed[number]) => Object.entries(m.params).filter(([, v]) => v > 0 || m.key !== 'other').map(([k, v]) => {
-      const f = c!.config.motions.find((x) => x.key === m.key)?.fields.find((x) => x.key === k);
+      const f = motionTypes(c!.config).find((x) => x.key === m.key)?.fields.find((x) => x.key === k);
       return `${f?.label ?? k} ${v}${f?.unit ? ' ' + f.unit : ''}`;
     }).join(' · ');
     kids.push(h('div', { class: 'floor' }, h('div', { class: 'tag' }, s.proposed.length > 1 ? 'Proposed motions' : 'On the floor'),

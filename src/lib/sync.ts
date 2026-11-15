@@ -121,7 +121,7 @@ async function pull() {
   // Row-level security returns only this school's conferences and committees (the master gets all of them).
   const fs = await db.from('ch_conferences').select('id, name, school_id, deleted_at').order('created_at');
   if (fs.error) throw fs.error;
-  for (const f of fs.data ?? []) store.putConf({ id: f.id, name: f.name, schoolId: f.school_id, deletedAt: f.deleted_at ? new Date(f.deleted_at).getTime() : undefined });
+  for (const f of fs.data ?? []) store.putConf({ id: f.id, name: f.name, schoolId: f.school_id, deletedAt: f.deleted_at ? new Date(f.deleted_at).getTime() : undefined }, true);
   wr(CLINKED, [...new Set([...rd(CLINKED), ...(fs.data ?? []).map((f) => f.id as string)])]);
   const cs = await db.from('ch_committees').select('id, name, conference, conference_id, config, deleted_at').order('created_at');
   if (cs.error) throw cs.error;
@@ -148,7 +148,7 @@ async function pull() {
     c.events = [...c.events, ...remoteEv.filter((x) => !have.has(x.id))].sort((a, b) => a.t - b.t);
     const haveD = new Set(c.delegates.map((d) => d.id));
     c.delegates = [...c.delegates, ...remoteDel.filter((d) => !haveD.has(d.id))];
-    store.put(c);
+    store.put(c, true);
   }
   wr(SYNCED, [...synced]);
 }
