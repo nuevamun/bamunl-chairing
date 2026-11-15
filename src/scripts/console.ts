@@ -8,7 +8,7 @@ const app = document.getElementById('app')!;
 const tools = document.getElementById('bar-tools')!;
 type Tab = 'floor' | 'roll' | 'delegates' | 'setup';
 let tab: Tab = 'floor';
-let privateOpen = false;              // the Feedback tab stays out of sight until the chair asks for it
+let menu = false;                     // the tab row stays out of sight on the Floor until the chair asks for it
 let picked: string | null = null;     // delegate open on the Delegates tab
 let c: Committee | undefined;
 let s: State;
@@ -285,15 +285,15 @@ function render() {
   s = derive(c);
   drawTools();
   document.title = `${c.name} · BAMUNL Chairing`;
-  if (tab === 'delegates' && !privateOpen) tab = 'floor';
-  const tabs: Array<[Tab, string]> = [['floor', 'Floor'], ['roll', 'Roll call'], ['setup', 'Setup'], ...(privateOpen ? [['delegates', 'Feedback'] as [Tab, string]] : [])];
+  const tabs: Array<[Tab, string]> = [['floor', 'Floor'], ['roll', 'Roll call'], ['delegates', 'Feedback'], ['setup', 'Setup']];
   const body = { floor: floorTab, roll: rollTab, delegates: delegatesTab, setup: setupTab }[tab]();
+  const showTabs = menu || tab !== 'floor';
+  // Hidden on purpose: feedback, scores and setup shouldn't be readable from across the room.
   app.replaceChildren(
     h('div', { class: 'lead' }, h('h1', { class: 'title' }, c.name.toLowerCase()), c.conference ? h('p', { class: 'subtitle' }, c.conference) : null),
     h('nav', { class: 'tabs', 'aria-label': 'Sections' },
-      ...tabs.map(([k, label]) => h('button', { type: 'button', class: 'tab' + (k === tab ? ' tab--on' : ''), 'aria-current': k === tab ? 'page' : null, onclick: () => { tab = k; if (k !== 'delegates') { privateOpen = false; picked = null; } render(); } }, label)),
-      // Easy to miss on purpose: feedback and scores shouldn't be readable from across the room.
-      h('button', { type: 'button', class: 'peek', 'aria-pressed': String(privateOpen), 'aria-label': privateOpen ? 'Hide private feedback' : 'Show private feedback', onclick: () => { privateOpen = !privateOpen; tab = privateOpen ? 'delegates' : 'floor'; picked = null; render(); } }, privateOpen ? 'Hide' : '·  ·  ·')),
+      ...(showTabs ? tabs.map(([k, label]) => h('button', { type: 'button', class: 'tab' + (k === tab ? ' tab--on' : ''), 'aria-current': k === tab ? 'page' : null, onclick: () => { tab = k; menu = k !== 'floor'; if (k !== 'delegates') picked = null; render(); } }, label)) : []),
+      h('button', { type: 'button', class: 'peek', 'aria-expanded': String(showTabs), 'aria-label': showTabs ? 'Hide sections' : 'Show sections', onclick: () => { if (showTabs) { tab = 'floor'; menu = false; picked = null; } else menu = true; render(); } }, showTabs ? 'Hide' : '·  ·  ·')),
     body);
   tick();
 }
@@ -313,7 +313,7 @@ function tick() {
 
 addEventListener('keydown', (e) => {
   const t = e.target as HTMLElement;
-  if (e.key === 'Escape' && privateOpen) { privateOpen = false; picked = null; tab = 'floor'; render(); return; }
+  if (e.key === 'Escape' && (menu || tab !== 'floor')) { menu = false; picked = null; tab = 'floor'; render(); return; }
   if (/INPUT|TEXTAREA|SELECT/.test(t.tagName)) return;
   if (e.code === 'Space' && s?.speaking && tab === 'floor') { e.preventDefault(); push(s.speaking.since != null ? 'pause' : 'resume'); }
 });
