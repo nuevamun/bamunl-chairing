@@ -292,3 +292,20 @@ details.pool > summary { cursor: pointer; font-weight: 700; color: var(--twiligh
 .past-name { font-weight: 600; }
 .past-res { font-size: .8125rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
 .past-res--passed { color: #1b5e2b; } .past-res--failed { color: #9b1c1c; } .past-res--withdrawn { color: var(--ink-soft); }
+
+/* the quiet toggle for the private Feedback tab */
+button.peek { font: inherit; font-size: .9rem; letter-spacing: .15em; color: var(--rule); background: none; border: 0; cursor: pointer; padding: .45rem .6rem; border-radius: 999px; }
+button.peek:hover, button.peek:focus-visible { color: var(--ink-soft); }
+
+/* take names: tap to queue */
+.names { margin-top: 1rem; }
+.names > summary { cursor: pointer; font-weight: 700; color: var(--twilight); }
+.chip-grid { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: .75rem; }
+button.chip-btn { font: inherit; font-weight: 600; font-size: .9375rem; display: inline-flex; align-items: center; gap: .4rem; min-height: 2.5rem; padding: .35rem .85rem; border: 2px solid var(--rule); border-radius: 999px; background: var(--paper); color: var(--ink); cursor: pointer; }
+button.chip-btn:hover { border-color: var(--twilight); }
+button.chip-btn--on { background: var(--twilight); border-color: var(--twilight); color: #fff; }
+button.chip-btn--away { color: var(--ink-soft); font-weight: 400; }
+button.chip-btn--on.chip-btn--away { color: #fff; }
+button.chip-btn:disabled { opacity: .45; cursor: not-allowed; }
+.chip-n { display: inline-grid; place-items: center; min-width: 1.4rem; height: 1.4rem; border-radius: 50%; background: var(--sky); color: var(--twilight-deep); font-size: .8rem; }
+button.chip-btn small { color: inherit; opacity: .7; }

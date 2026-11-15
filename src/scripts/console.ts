@@ -8,6 +8,7 @@ const app = document.getElementById('app')!;
 const tools = document.getElementById('bar-tools')!;
 type Tab = 'floor' | 'roll' | 'delegates' | 'setup';
 let tab: Tab = 'floor';
+let privateOpen = false;              // the Feedback tab stays out of sight until the chair asks for it
 let picked: string | null = null;     // delegate open on the Delegates tab
 let c: Committee | undefined;
 let s: State;
@@ -90,6 +91,20 @@ const delegateOpts = (list: string[] = []): Opt[] => c!.delegates.map((d) => {
   return { id: d.id, name: d.name, off: queued || speaking, note: queued ? 'on the list' : speaking ? 'speaking' : absent ? 'absent' : '' };
 });
 
+/** Tap a delegate to put them on the list, tap again to take them off. Numbers show the order they will be called. */
+function takeNames(key: 'gsl' | 'mod', list: string[]) {
+  if (!c!.delegates.length) return null;
+  const chips = c!.delegates.map((d) => {
+    const at = list.indexOf(d.id);
+    const spoke = s.speeches.filter((x) => x.d === d.id && x.mode === key).length;
+    const speaking = s.speaking?.d === d.id;
+    return h('button', { type: 'button', class: 'chip-btn' + (at >= 0 ? ' chip-btn--on' : '') + (!here(d.id) ? ' chip-btn--away' : ''), 'aria-pressed': String(at >= 0), disabled: speaking ? true : null,
+      onclick: () => push(at >= 0 ? 'drop' : 'add', { d: d.id }) },
+      at >= 0 ? h('b', { class: 'chip-n' }, String(at + 1)) : null, d.name, spoke ? h('small', null, `×${spoke}`) : null);
+  });
+  return h('details', { class: 'names', open: key === 'mod' }, h('summary', null, 'Take names'), h('div', { class: 'chip-grid' }, ...chips));
+}
+
 function listCard() {
   const mode = s.mode;
   if (mode.kind === 'unmod') return h('section', { class: 'card' }, h('h2', null, 'speakers list'), h('p', { class: 'empty' }, 'Not used in an unmoderated caucus.'));
@@ -97,9 +112,11 @@ function listCard() {
   const list = s.lists[key];
   const wasAdding = refocusAdd; refocusAdd = false;
   const picker = combo(delegateOpts(list), (o) => { refocusAdd = true; push('add', { d: o.id }); }, 'Add a delegate to the list', 'Type a name to add…', wasAdding);
+  const names = takeNames(key, list);
   return h('section', { class: 'card' },
     h('div', { class: 'card-head' }, h('h2', null, mode.kind === 'mod' ? 'moderated list' : 'speakers list'), h('span', { class: 'muted' }, `${s.speakTime}s each`)),
     s.closed && key === 'gsl' ? h('p', { class: 'flash' }, 'List is closed.') : picker,
+    s.closed && key === 'gsl' ? null : names,
     h('ol', { class: 'queue-list' }, ...list.map((d, i) => h('li', null,
       h('span', { class: 'qn' }, nameOf(d)),
       btn('Start', () => push('start', { d }), 'btn btn--primary btn--xs'),
@@ -268,11 +285,15 @@ function render() {
   s = derive(c);
   drawTools();
   document.title = `${c.name} · BAMUNL Chairing`;
-  const tabs: Array<[Tab, string]> = [['floor', 'Floor'], ['roll', 'Roll call'], ['delegates', 'Delegates'], ['setup', 'Setup']];
+  if (tab === 'delegates' && !privateOpen) tab = 'floor';
+  const tabs: Array<[Tab, string]> = [['floor', 'Floor'], ['roll', 'Roll call'], ['setup', 'Setup'], ...(privateOpen ? [['delegates', 'Feedback'] as [Tab, string]] : [])];
   const body = { floor: floorTab, roll: rollTab, delegates: delegatesTab, setup: setupTab }[tab]();
   app.replaceChildren(
     h('div', { class: 'lead' }, h('h1', { class: 'title' }, c.name.toLowerCase()), c.conference ? h('p', { class: 'subtitle' }, c.conference) : null),
-    h('nav', { class: 'tabs', 'aria-label': 'Sections' }, ...tabs.map(([k, label]) => h('button', { type: 'button', class: 'tab' + (k === tab ? ' tab--on' : ''), 'aria-current': k === tab ? 'page' : null, onclick: () => { tab = k; render(); } }, label))),
+    h('nav', { class: 'tabs', 'aria-label': 'Sections' },
+      ...tabs.map(([k, label]) => h('button', { type: 'button', class: 'tab' + (k === tab ? ' tab--on' : ''), 'aria-current': k === tab ? 'page' : null, onclick: () => { tab = k; if (k !== 'delegates') { privateOpen = false; picked = null; } render(); } }, label)),
+      // Easy to miss on purpose: feedback and scores shouldn't be readable from across the room.
+      h('button', { type: 'button', class: 'peek', 'aria-pressed': String(privateOpen), 'aria-label': privateOpen ? 'Hide private feedback' : 'Show private feedback', onclick: () => { privateOpen = !privateOpen; tab = privateOpen ? 'delegates' : 'floor'; picked = null; render(); } }, privateOpen ? 'Hide' : '·  ·  ·')),
     body);
   tick();
 }
@@ -292,6 +313,7 @@ function tick() {
 
 addEventListener('keydown', (e) => {
   const t = e.target as HTMLElement;
+  if (e.key === 'Escape' && privateOpen) { privateOpen = false; picked = null; tab = 'floor'; render(); return; }
   if (/INPUT|TEXTAREA|SELECT/.test(t.tagName)) return;
   if (e.code === 'Space' && s?.speaking && tab === 'floor') { e.preventDefault(); push(s.speaking.since != null ? 'pause' : 'resume'); }
 });
