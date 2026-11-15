@@ -28,7 +28,7 @@ export const DEFAULT_CONFIG: Config = {
     { key: 'mod', label: 'Moderated caucus', effect: 'mod', fields: [{ key: 'total', label: 'Total', unit: 'min', def: 10 }, { key: 'per', label: 'Per speaker', unit: 's', def: 45 }] },
     { key: 'speaktime', label: 'Change speaking time', effect: 'speaktime', fields: [{ key: 'per', label: 'Per speaker', unit: 's', def: 45 }] },
     { key: 'close', label: 'Close the speakers list', effect: 'close', fields: [] },
-    { key: 'other', label: 'Other motion', effect: 'none', fields: [] },
+    { key: 'other', label: 'Other motion', effect: 'none', fields: [{ key: 'time', label: 'Time', unit: 'min', def: 0 }] },
   ],
 };
 
@@ -41,7 +41,7 @@ export type Speech = {
   id: string; d: string; allotted: number; used: number; left: number; over: number;
   end: 'done' | 'chair' | 'delegate' | 'questions'; to?: string; mode: 'gsl' | 'mod'; t: number;
 };
-export type Floor = { id: string; key: string; label: string; params: Record<string, number>; note: string };
+export type Floor = { id: string; key: string; label: string; params: Record<string, number>; note: string; by: string };
 export type MotionRecord = Floor & { yes: number; no: number; abstain: number; result: 'passed' | 'failed' | 'withdrawn'; t: number };
 export type Note = { id: string; d: string; text: string; tag: string; t: number };
 export type Score = { d: string; cat: string; v: number };
@@ -54,7 +54,8 @@ export type State = {
   speakTime: number;
   mode: Mode;
   speaking: Speaking | null;
-  floor: Floor | null;
+  /** Motions proposed and not yet decided, most disruptive first (the config's order is the precedence). */
+  proposed: Floor[];
   speeches: Speech[];
   motions: MotionRecord[];
   notes: Note[];
@@ -79,7 +80,7 @@ export function passes(majority: Config['majority'], yes: number, no: number) {
 export function derive(c: Committee): State {
   const s: State = {
     attendance: {}, lists: { gsl: [], mod: [] }, closed: false, speakTime: c.config.speakTime, mode: { kind: 'gsl' },
-    speaking: null, floor: null, speeches: [], motions: [], notes: [], scores: [], listed: {}, eventCount: 0,
+    speaking: null, proposed: [], speeches: [], motions: [], notes: [], scores: [], listed: {}, eventCount: 0,
   };
   const key = (): 'gsl' | 'mod' => (s.mode.kind === 'mod' ? 'mod' : 'gsl');
   const finish = (e: Ev, how: Speech['end'], to?: string) => {
@@ -122,18 +123,27 @@ export function derive(c: Committee): State {
       case 'stop': finish(e, e.how ?? 'done', e.to); break;
       case 'floor': {
         const type = c.config.motions.find((m) => m.key === e.key);
-        s.floor = { id: e.id, key: e.key, label: type?.label ?? e.key, params: e.params ?? {}, note: e.note ?? '' };
+        s.proposed.push({ id: e.id, key: e.key, label: (e.name && String(e.name).trim()) || type?.label || e.key, params: e.params ?? {}, note: e.note ?? '', by: e.by ?? '' });
+        const rank = (m: Floor) => { const i = c.config.motions.findIndex((x) => x.key === m.key); return i < 0 ? 999 : i; };
+        s.proposed.sort((x, y) => rank(x) - rank(y));   // stable: same kind stays in the order proposed
         break;
       }
-      case 'withdraw':
-        if (s.floor) { s.motions.push({ ...s.floor, yes: 0, no: 0, abstain: 0, result: 'withdrawn', t: e.t }); s.floor = null; }
+      case 'withdraw': {
+        const f = s.proposed.find((m) => m.id === e.target);
+        if (f) { s.motions.push({ ...f, yes: 0, no: 0, abstain: 0, result: 'withdrawn', t: e.t }); s.proposed = s.proposed.filter((m) => m !== f); }
+        break;
+      }
+      case 'clear_proposed':
+        for (const f of s.proposed) s.motions.push({ ...f, yes: 0, no: 0, abstain: 0, result: 'withdrawn', t: e.t });
+        s.proposed = [];
         break;
       case 'vote': {
-        if (!s.floor) break;
-        const f = s.floor;
-        const ok = passes(c.config.majority, e.yes, e.no);
-        s.motions.push({ ...f, yes: e.yes, no: e.no, abstain: e.abstain ?? 0, result: ok ? 'passed' : 'failed', t: e.t });
-        s.floor = null;
+        // The chair says whether it passed. Counts are optional; with counts and no stated result the majority rule decides.
+        const f = s.proposed.find((m) => m.id === e.target) ?? (e.target ? undefined : s.proposed[0]);
+        if (!f) break;
+        const ok = e.result ? e.result === 'passed' : passes(c.config.majority, e.yes ?? 0, e.no ?? 0);
+        s.motions.push({ ...f, yes: e.yes ?? 0, no: e.no ?? 0, abstain: e.abstain ?? 0, result: ok ? 'passed' : 'failed', t: e.t });
+        s.proposed = s.proposed.filter((m) => m !== f);
         if (!ok) break;
         const type = c.config.motions.find((m) => m.key === f.key);
         if (type?.effect === 'mod') { s.mode = { kind: 'mod', total: (f.params.total ?? 0) * 60, per: f.params.per ?? 45, startedAt: e.t, label: f.label }; s.lists.mod = []; }

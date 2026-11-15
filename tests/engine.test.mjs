@@ -42,3 +42,19 @@ test('failed motion changes nothing; 2/3 majority', () => {
   const s = derive(c); assert.equal(s.closed, false); assert.equal(s.motions[0].result, 'failed');
   assert.equal(passes('twothirds', 6, 3), true); assert.equal(passes('twothirds', 5, 3), false);
 });
+
+test('several motions can be open; the chair picks which passes or fails', () => {
+  const c = mk();
+  E(c, 0, 'floor', { key: 'mod', params: { total: 10, per: 45 }, by: 'a' });
+  E(c, 1, 'floor', { key: 'unmod', params: { total: 5 } });
+  const ids = c.events.map((e) => e.id);
+  let s = derive(c);
+  assert.equal(s.proposed.length, 2);
+  assert.equal(s.proposed[0].key, 'unmod');           // precedence order, not order proposed
+  E(c, 2, 'vote', { target: ids[0], result: 'failed' });   // no counts needed
+  s = derive(c);
+  assert.equal(s.proposed.length, 1); assert.equal(s.mode.kind, 'gsl');
+  assert.equal(s.motions[0].result, 'failed'); assert.equal(s.motions[0].by, 'a');
+  E(c, 3, 'clear_proposed'); s = derive(c);
+  assert.equal(s.proposed.length, 0); assert.equal(s.motions.at(-1).result, 'withdrawn');
+});

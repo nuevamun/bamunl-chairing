@@ -17,12 +17,13 @@ function render() {
   const name = (d: string) => c!.delegates.find((x) => x.id === d)?.name ?? '';
   const kids: Array<HTMLElement | null> = [h('div', { class: 'd-head' }, h('span', null, c.name), h('span', { class: 'mode' },
     s.mode.kind === 'gsl' ? (s.closed ? 'Speakers list (closed)' : 'Speakers list') : s.mode.label))];
-  if (s.floor) {
-    const p = Object.entries(s.floor.params).map(([k, v]) => {
-      const f = c!.config.motions.find((m) => m.key === s.floor!.key)?.fields.find((x) => x.key === k);
-      return `${f?.label ?? k}: ${v}${f?.unit ? ' ' + f.unit : ''}`;
+  if (s.proposed.length) {
+    const text = (m: typeof s.proposed[number]) => Object.entries(m.params).filter(([, v]) => v > 0 || m.key !== 'other').map(([k, v]) => {
+      const f = c!.config.motions.find((x) => x.key === m.key)?.fields.find((x) => x.key === k);
+      return `${f?.label ?? k} ${v}${f?.unit ? ' ' + f.unit : ''}`;
     }).join(' · ');
-    kids.push(h('div', { class: 'floor' }, h('div', { class: 'tag' }, 'On the floor'), h('div', { class: 'floor-name' }, s.floor.label), p ? h('div', { class: 'floor-p' }, p) : null));
+    kids.push(h('div', { class: 'floor' }, h('div', { class: 'tag' }, s.proposed.length > 1 ? 'Proposed motions' : 'On the floor'),
+      ...s.proposed.map((m) => h('div', { class: 'floor-row' }, h('span', { class: 'floor-name' }, m.label), text(m) ? h('span', { class: 'floor-p' }, text(m)) : null))));
   }
   if (s.mode.kind === 'unmod') {
     kids.push(h('div', { class: 'speaker' }, h('div', { class: 'big-name' }, 'Unmoderated caucus'), clockEl));

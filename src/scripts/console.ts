@@ -46,17 +46,60 @@ function speakerCard() {
   return h('section', { class: 'card speaker-card' }, modeBar, ...body);
 }
 
+
+let refocusAdd = false;
+type Opt = { id: string; name: string; off: boolean; note: string };
+/** Type to filter, arrows and Enter to choose, click works too. `onPick` gets the chosen option. */
+function combo(all: Opt[], onPick: (o: Opt) => void, label: string, placeholder: string, refocus = false) {
+  const input = h('input', { type: 'text', role: 'combobox', 'aria-expanded': 'false', 'aria-autocomplete': 'list', 'aria-label': label, placeholder, autocomplete: 'off', spellcheck: 'false' }) as HTMLInputElement;
+  const box = h('ul', { class: 'combo-list', role: 'listbox', hidden: true });
+  let items: Opt[] = [];
+  let active = 0;
+  const paint = () => {
+    const q = input.value.trim().toLowerCase();
+    items = all.filter((d) => !q || d.name.toLowerCase().includes(q))
+      .sort((x, y) => Number(x.off) - Number(y.off) || Number(!x.name.toLowerCase().startsWith(q)) - Number(!y.name.toLowerCase().startsWith(q)) || x.name.localeCompare(y.name));
+    active = Math.max(0, items.findIndex((d) => !d.off));
+    box.replaceChildren(...items.map((d, i) => h('li', { role: 'option', 'aria-disabled': String(d.off), class: 'opt' + (d.off ? ' opt--off' : '') + (i === active ? ' opt--on' : ''),
+      onmousedown: (e: Event) => { e.preventDefault(); if (!d.off) pick(d); } }, h('span', null, d.name), d.note ? h('small', null, d.note) : null)));
+    if (!items.length) box.replaceChildren(h('li', { class: 'opt opt--off' }, 'No match'));
+    box.hidden = false; input.setAttribute('aria-expanded', 'true');
+  };
+  const pick = (d: Opt) => { box.hidden = true; onPick(d); };
+  const move = (by: number) => {
+    const ok = items.map((d, i) => (d.off ? -1 : i)).filter((i) => i >= 0);
+    if (!ok.length) return;
+    const at = ok.indexOf(active); active = ok[(at + by + ok.length) % ok.length];
+    [...box.children].forEach((li, i) => { li.classList.toggle('opt--on', i === active); if (i === active) (li as HTMLElement).scrollIntoView({ block: 'nearest' }); });
+  };
+  input.addEventListener('focus', paint);
+  input.addEventListener('input', paint);
+  input.addEventListener('blur', () => { box.hidden = true; input.setAttribute('aria-expanded', 'false'); });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); if (box.hidden) paint(); else move(1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); move(-1); }
+    else if (e.key === 'Enter') { e.preventDefault(); const d = items[active]; if (d && !d.off && !box.hidden) pick(d); }
+    else if (e.key === 'Escape') { input.blur(); }
+  });
+  if (refocus) queueMicrotask(() => input.focus());
+  return Object.assign(h('div', { class: 'combo' }, input, box), { input });
+}
+
+const delegateOpts = (list: string[] = []): Opt[] => c!.delegates.map((d) => {
+  const queued = list.includes(d.id), speaking = s.speaking?.d === d.id, absent = !here(d.id);
+  return { id: d.id, name: d.name, off: queued || speaking, note: queued ? 'on the list' : speaking ? 'speaking' : absent ? 'absent' : '' };
+});
+
 function listCard() {
   const mode = s.mode;
   if (mode.kind === 'unmod') return h('section', { class: 'card' }, h('h2', null, 'speakers list'), h('p', { class: 'empty' }, 'Not used in an unmoderated caucus.'));
   const key = mode.kind === 'mod' ? 'mod' : 'gsl';
   const list = s.lists[key];
-  const avail = c!.delegates.filter((d) => here(d.id) && !list.includes(d.id) && s.speaking?.d !== d.id);
-  const sel = h('select', { 'aria-label': 'Add a delegate to the list' }, h('option', { value: '' }, 'Add a delegate…'), ...avail.map((d) => h('option', { value: d.id }, d.name))) as HTMLSelectElement;
-  sel.onchange = () => { if (sel.value) push('add', { d: sel.value }); };
+  const wasAdding = refocusAdd; refocusAdd = false;
+  const picker = combo(delegateOpts(list), (o) => { refocusAdd = true; push('add', { d: o.id }); }, 'Add a delegate to the list', 'Type a name to add…', wasAdding);
   return h('section', { class: 'card' },
     h('div', { class: 'card-head' }, h('h2', null, mode.kind === 'mod' ? 'moderated list' : 'speakers list'), h('span', { class: 'muted' }, `${s.speakTime}s each`)),
-    s.closed && key === 'gsl' ? h('p', { class: 'flash' }, 'List is closed.') : sel,
+    s.closed && key === 'gsl' ? h('p', { class: 'flash' }, 'List is closed.') : picker,
     h('ol', { class: 'queue-list' }, ...list.map((d, i) => h('li', null,
       h('span', { class: 'qn' }, nameOf(d)),
       btn('Start', () => push('start', { d }), 'btn btn--primary btn--xs'),
@@ -66,37 +109,57 @@ function listCard() {
       list.length ? null : h('li', { class: 'empty' }, 'Empty')));
 }
 
+const paramText = (m: { key: string; params: Record<string, number> }) => {
+  const fields = c!.config.motions.find((x) => x.key === m.key)?.fields ?? [];
+  return Object.entries(m.params).filter(([, v]) => v > 0 || m.key !== 'other').map(([k, v]) => {
+    const f = fields.find((x) => x.key === k);
+    return `${f?.label ?? k} ${v}${f?.unit ? ' ' + f.unit : ''}`;
+  }).join(' · ');
+};
+
 function motionCard() {
-  if (s.floor) {
-    const f = s.floor;
-    const yes = h('input', { type: 'number', name: 'yes', value: 0, min: 0, inputmode: 'numeric' }) as HTMLInputElement;
-    const no = h('input', { type: 'number', name: 'no', value: 0, min: 0, inputmode: 'numeric' }) as HTMLInputElement;
-    const ab = h('input', { type: 'number', name: 'abstain', value: 0, min: 0, inputmode: 'numeric' }) as HTMLInputElement;
-    const quorum = Object.values(s.attendance).filter((a) => a !== 'absent').length;
-    return h('section', { class: 'card' }, h('h2', null, 'on the floor'),
-      h('p', { class: 'floor-line' }, h('strong', null, f.label), ' ', Object.entries(f.params).map(([k, v]) => `${k} ${v}`).join(' · ')),
-      h('form', { class: 'form', onsubmit: (e: Event) => { e.preventDefault(); push('vote', { yes: +yes.value || 0, no: +no.value || 0, abstain: +ab.value || 0 }); } },
-        h('div', { class: 'fields fields--3' },
-          h('label', { class: 'field field--tight' }, h('span', null, 'For'), yes),
-          h('label', { class: 'field field--tight' }, h('span', null, 'Against'), no),
-          h('label', { class: 'field field--tight' }, h('span', null, 'Abstain'), ab)),
-        h('p', { class: 'muted' }, `${quorum} present · ${c!.config.majority === 'twothirds' ? '2/3' : 'simple'} majority`),
-        h('div', { class: 'btn-row' }, h('button', { class: 'btn btn--primary btn--sm' }, 'Record vote'), btn('Withdraw', () => push('withdraw')))));
-  }
+  // Propose: a motion goes into the pool. Nothing has to be voted on straight away.
   const type = h('select', { name: 'type', 'aria-label': 'Motion' }, ...c!.config.motions.map((m) => h('option', { value: m.key }, m.label))) as HTMLSelectElement;
+  const name = h('input', { type: 'text', name: 'name', placeholder: 'What is the motion?', autocomplete: 'off', 'aria-label': 'Motion name' }) as HTMLInputElement;
+  const nameField = h('label', { class: 'field field--tight field--wide' }, h('span', null, 'Name'), name);
   const fields = h('div', { class: 'fields fields--3' });
-  const drawFields = () => {
-    const m = c!.config.motions.find((x) => x.key === type.value)!;
-    fields.replaceChildren(...m.fields.map((f) => num(f.key, f.def, `${f.label}${f.unit ? ' (' + f.unit + ')' : ''}`)));
+  let by = '';
+  const byBox = h('div', { class: 'field field--tight' }, h('span', null, 'Proposed by (optional)'));
+  const drawBy = () => {
+    const pickerEl = combo(delegateOpts().map((o) => ({ ...o, off: false })), (o) => { by = o.id; pickerEl.input.value = o.name; }, 'Proposed by', 'Type a name…');
+    pickerEl.input.addEventListener('input', () => { by = ''; });
+    byBox.replaceChildren(byBox.firstChild!, pickerEl);
   };
-  type.onchange = drawFields; drawFields();
-  return h('section', { class: 'card' }, h('h2', null, 'motions'),
-    h('form', { class: 'form', onsubmit: (e: Event) => {
-      e.preventDefault();
-      const params: Record<string, number> = {};
-      fields.querySelectorAll('input').forEach((i) => { params[(i as HTMLInputElement).name] = +(i as HTMLInputElement).value || 0; });
-      push('floor', { key: type.value, params });
-    } }, type, fields, h('button', { class: 'btn btn--primary btn--sm' }, 'Put on the floor')));
+  const draw = () => {
+    const m = c!.config.motions.find((x) => x.key === type.value)!;
+    nameField.hidden = m.key !== 'other';
+    const fs = m.key === 'other' && !m.fields.length ? [{ key: 'time', label: 'Time', unit: 'min' as const, def: 0 }] : m.fields;
+    fields.replaceChildren(...fs.map((f) => num(f.key, f.def, `${f.label}${f.unit ? ' (' + f.unit + ')' : ''}`)));
+  };
+  type.onchange = draw; draw(); drawBy();
+
+  const form = h('form', { class: 'form', onsubmit: (e: Event) => {
+    e.preventDefault();
+    const params: Record<string, number> = {};
+    fields.querySelectorAll('input').forEach((i) => { params[(i as HTMLInputElement).name] = +(i as HTMLInputElement).value || 0; });
+    if (type.value === 'other' && !name.value.trim()) { name.focus(); return; }
+    push('floor', { key: type.value, params, by, ...(type.value === 'other' ? { name: name.value.trim() } : {}) });
+  } }, type, nameField, fields, byBox, h('button', { class: 'btn btn--primary btn--sm' }, 'Propose'));
+
+  // The pool: pick which to take up, and say whether it passed or failed.
+  const pool = s.proposed.map((m, i) => {
+    const yes = h('input', { type: 'number', min: 0, inputmode: 'numeric', placeholder: 'For', 'aria-label': 'For' }) as HTMLInputElement;
+    const no = h('input', { type: 'number', min: 0, inputmode: 'numeric', placeholder: 'Against', 'aria-label': 'Against' }) as HTMLInputElement;
+    const ab = h('input', { type: 'number', min: 0, inputmode: 'numeric', placeholder: 'Abstain', 'aria-label': 'Abstain' }) as HTMLInputElement;
+    const decide = (result: 'passed' | 'failed') => push('vote', { target: m.id, result, yes: +yes.value || 0, no: +no.value || 0, abstain: +ab.value || 0 });
+    return h('li', { class: 'proposal' },
+      h('div', { class: 'proposal-top' }, h('strong', null, m.label), h('span', { class: 'muted' }, [paramText(m), m.by ? `by ${nameOf(m.by)}` : '', i === 0 && s.proposed.length > 1 ? 'first in order' : ''].filter(Boolean).join(' · '))),
+      h('div', { class: 'proposal-votes' }, yes, no, ab),
+      h('div', { class: 'btn-row' }, btn('Passed', () => decide('passed'), 'btn btn--primary btn--sm'), btn('Failed', () => decide('failed')), btn('Withdraw', () => push('withdraw', { target: m.id }))));
+  });
+  return h('section', { class: 'card' }, h('h2', null, 'motions'), form,
+    pool.length ? h('div', { class: 'pool' }, h('div', { class: 'card-head' }, h('h3', null, 'proposed'), s.proposed.length > 1 ? btn('Clear all', () => push('clear_proposed'), 'btn btn--ghost btn--xs') : null), h('ul', { class: 'proposals' }, ...pool),
+      h('p', { class: 'muted small' }, 'Vote counts are optional.')) : null);
 }
 
 function floorTab() {
@@ -153,10 +216,10 @@ function detail(d: string) {
 }
 
 function logTab() {
-  const rows = [...s.motions].reverse().map((m) => h('tr', null, h('td', null, new Date(m.t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })), h('td', null, m.label), h('td', null, Object.entries(m.params).map(([k, v]) => `${k} ${v}`).join(', ')), h('td', null, m.result === 'withdrawn' ? '—' : `${m.yes}–${m.no}–${m.abstain}`), h('td', null, m.result)));
-  return h('section', { class: 'card' }, h('h2', null, 'motions'),
-    h('div', { class: 'sheet-wrap' }, h('table', { class: 'sheet' }, h('thead', null, h('tr', null, ...['Time', 'Motion', 'Details', 'For–Against–Abstain', 'Result'].map((t) => h('th', null, t)))),
-      h('tbody', null, ...rows, rows.length ? null : h('tr', null, h('td', { colspan: 5, class: 'empty' }, 'None yet.'))))));
+  const rows = [...s.motions].reverse().map((m) => h('tr', null, h('td', null, new Date(m.t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })), h('td', null, m.label), h('td', null, paramText(m)), h('td', null, m.by ? nameOf(m.by) : '—'), h('td', null, m.result === 'withdrawn' || (!m.yes && !m.no && !m.abstain) ? '—' : `${m.yes}–${m.no}–${m.abstain}`), h('td', null, m.result === 'withdrawn' ? 'not voted' : m.result)));
+  return h('section', { class: 'card' }, h('h2', null, 'proposed motions'),
+    h('div', { class: 'sheet-wrap' }, h('table', { class: 'sheet' }, h('thead', null, h('tr', null, ...['Time', 'Motion', 'Details', 'Proposed by', 'For–Against–Abstain', 'Result'].map((t) => h('th', null, t)))),
+      h('tbody', null, ...rows, rows.length ? null : h('tr', null, h('td', { colspan: 6, class: 'empty' }, 'None yet.'))))));
 }
 
 function setupTab() {
