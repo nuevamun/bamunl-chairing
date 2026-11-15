@@ -1,7 +1,7 @@
 // The chair console: the back of the room. Everything here writes events; nothing mutates state directly.
 import { store } from '../lib/store';
 import { derive, statsFor, elapsed, clock, ev, uid, effective, AWARD_CATEGORIES, NOTE_TAGS, type Committee, type State, type Attendance } from '../lib/engine';
-import { h, $ } from '../lib/ui';
+import { h, $, mount } from '../lib/ui';
 import { askConfirm } from '../lib/confirm';
 import { askDelete } from '../lib/guard';
 
@@ -306,7 +306,7 @@ function askBackend() {
 
 function render() {
   c = store.get(id);
-  if (!c) { app.replaceChildren(h('div', { class: 'lead' }, h('h1', { class: 'title' }, 'not found'), h('a', { class: 'btn btn--primary', href: '/' }, 'All committees'))); return; }
+  if (!c) { mount(app, h('div', { class: 'lead' }, h('h1', { class: 'title' }, 'not found'), h('a', { class: 'btn btn--primary', href: '/' }, 'All committees'))); return; }
   s = derive(c);
   drawTools();
   document.title = `${c.name} · BAMUNL Chairing`;
@@ -314,7 +314,7 @@ function render() {
   const body = { floor: floorTab, roll: rollTab, delegates: delegatesTab, setup: setupTab }[tab]();
   const showTabs = menu || tab !== 'floor';
   // Hidden on purpose: feedback, scores and setup shouldn't be readable from across the room.
-  app.replaceChildren(
+  mount(app, 
     h('div', { class: 'lead' }, c.conferenceId ? h('a', { class: 'crumb', href: `/conf/${c.conferenceId}` }, `← ${store.conf(c.conferenceId)?.name || c.conference || 'Conference'}`) : h('a', { class: 'crumb', href: '/' }, '← All conferences'), h('h1', { class: 'title' }, c.name.toLowerCase())),
     showTabs ? h('nav', { class: 'tabs', 'aria-label': 'Sections' },
       ...(showTabs ? tabs.map(([k, label]) => h('button', { type: 'button', class: 'tab' + (k === tab ? ' tab--on' : ''), 'aria-current': k === tab ? 'page' : null, onclick: () => { tab = k; menu = k !== 'floor'; if (k !== 'delegates') picked = null; render(); } }, label)) : [])) : null,

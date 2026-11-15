@@ -1,7 +1,7 @@
 // The forward-facing screen: what delegates see. Never shows notes, scores or any per-delegate feedback.
 import { store } from '../lib/store';
 import { derive, elapsed, clock, type Committee } from '../lib/engine';
-import { h } from '../lib/ui';
+import { h, mount } from '../lib/ui';
 
 const id = location.pathname.split('/')[2];
 const app = document.getElementById('app')!;
@@ -12,7 +12,7 @@ const barEl = h('div', { class: 'bar-fill' });
 
 function render() {
   c = store.get(id);
-  if (!c) { app.replaceChildren(h('p', { class: 'big-name' }, '—')); return; }
+  if (!c) { mount(app, h('p', { class: 'big-name' }, '—')); return; }
   const s = derive(c);
   const name = (d: string) => c!.delegates.find((x) => x.id === d)?.name ?? '';
   const kids: Array<HTMLElement | null> = [h('div', { class: 'd-head' }, h('span', null, c.name), h('span', { class: 'mode' },
@@ -36,7 +36,7 @@ function render() {
   if (next.length && s.mode.kind !== 'unmod') {
     kids.push(h('div', { class: 'queue' }, h('div', { class: 'tag' }, 'Next'), h('ol', null, ...next.map((d) => h('li', null, name(d))))));
   }
-  app.replaceChildren(...(kids.filter(Boolean) as HTMLElement[]));
+  mount(app, ...(kids.filter(Boolean) as HTMLElement[]));
   tick();
 }
 

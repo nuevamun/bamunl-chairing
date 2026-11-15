@@ -12,3 +12,8 @@ export function h(tag: string, attrs: Attrs | null, ...kids: Array<Node | string
   return el;
 }
 export const $ = <T extends HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector(sel) as T | null;
+
+/** Replace a container's contents, skipping empty slots. (replaceChildren prints null as the word "null".) */
+export function mount(el: Element, ...kids: Array<Node | string | null | false | undefined>) {
+  el.replaceChildren(...(kids.filter((k) => k != null && k !== false) as Array<Node | string>));
+}

@@ -2,7 +2,7 @@
 // signed in as a league admin login, from this site, and owning the conference (see mayManage).
 import type { APIRoute } from 'astro';
 import { serviceClient } from '../../lib/server';
-import { adminEmail, confEmail, checkNew, mayManage, MIN_PASSWORD, MAX_PASSWORD, MAX_PER_CONFERENCE } from '../../lib/logins';
+import { adminEmail, confEmail, checkNew, isTaken, mayManage, MIN_PASSWORD, MAX_PASSWORD, MAX_PER_CONFERENCE } from '../../lib/logins';
 
 export const prerender = false;
 const json = (body: object, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
@@ -38,9 +38,12 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   if (clash) return json({ error: 'That username is taken.' }, 409);
 
   const made = await sc.auth.admin.createUser({ email: confEmail(username), password, email_confirm: true });
-  if (made.error || !made.data.user) return json({ error: made.error?.message.includes('already') ? 'That username is taken.' : 'Could not create the login.' }, 409);
+  if (made.error || !made.data.user) return isTaken(made.error) ? json({ error: 'That username is taken.' }, 409) : json({ error: 'Could not create the login.' }, 500);
   const row = await sc.from('ch_conference_logins').insert({ user_id: made.data.user.id, conference_id: conferenceId, username, created_by: locals.who!.id });
-  if (row.error) { await sc.auth.admin.deleteUser(made.data.user.id); return json({ error: 'Could not create the login.' }, 500); }
+  if (row.error) {
+    await sc.auth.admin.deleteUser(made.data.user.id);          // undo, so no orphan account is left behind
+    return row.error.code === '23505' ? json({ error: 'That username is taken.' }, 409) : json({ error: 'Could not create the login.' }, 500);
+  }
   return json({ ok: true, username });
 };
 

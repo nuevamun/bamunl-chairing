@@ -25,3 +25,8 @@ export function mayManage(member: { role: 'admin' | 'school'; school_id: string 
   if (member.role === 'admin') return true;
   return !!member.school_id && member.school_id === conferenceSchoolId;
 }
+
+/** Did Supabase refuse because that address already exists? Newer versions send a code, older ones only a message. */
+export function isTaken(error: { code?: string; status?: number; message?: string } | null | undefined) {
+  return !!error && (error.code === 'email_exists' || error.code === 'user_already_exists' || error.status === 422 || /already/i.test(error.message ?? ''));
+}

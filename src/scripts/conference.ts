@@ -4,7 +4,7 @@ import { derive, clock, newCommittee, TRASH_DAYS } from '../lib/engine';
 import { askConfirm } from '../lib/confirm';
 import { askDelete } from '../lib/guard';
 import { trashNote } from '../lib/trash';
-import { h } from '../lib/ui';
+import { h, mount } from '../lib/ui';
 import { session } from '../lib/sync';
 import { supabase } from '../lib/supabase';
 import { usernameOf, MIN_PASSWORD } from '../lib/logins';
@@ -70,7 +70,7 @@ store.migrate();
 function render() {
   const f = store.conf(id);
   if (!f || f.deletedAt) {
-    app.replaceChildren(h('div', { class: 'lead' }, h('h1', { class: 'title' }, 'not found'), h('a', { class: 'btn btn--primary', href: '/' }, 'All conferences')));
+    mount(app, h('div', { class: 'lead' }, h('h1', { class: 'title' }, 'not found'), h('a', { class: 'btn btn--primary', href: '/' }, 'All conferences')));
     return;
   }
   document.title = `${f.name} · BAMUNL Chairing`;
@@ -102,7 +102,7 @@ function render() {
   }) : [h('p', { class: 'empty' }, 'No committees yet.')];
 
   const trash = store.trash(f.id);
-  app.replaceChildren(
+  mount(app, 
     h('div', { class: 'lead' }, session().role === 'conference' ? null : h('a', { class: 'crumb', href: '/' }, '← All conferences'), h('h1', { class: 'title' }, f.name.toLowerCase())),
     h('div', { class: 'committees' }, ...cards),
     form,

@@ -4,7 +4,7 @@ import { derive, clock, TRASH_DAYS } from '../lib/engine';
 import { askConfirm } from '../lib/confirm';
 import { askDelete } from '../lib/guard';
 import { trashNote } from '../lib/trash';
-import { h } from '../lib/ui';
+import { h, mount } from '../lib/ui';
 import { session, schools, schoolName } from '../lib/sync';
 
 const app = document.getElementById('app')!;
@@ -45,7 +45,7 @@ function render() {
   }) : [h('p', { class: 'empty' }, 'No conferences yet.')];
 
   const trash = store.confTrash();
-  app.replaceChildren(
+  mount(app, 
     h('div', { class: 'lead' }, h('h1', { class: 'title' }, 'conferences')),
     h('div', { class: 'committees' }, ...cards),
     form,
