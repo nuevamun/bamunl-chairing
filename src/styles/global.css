@@ -224,8 +224,8 @@ button.tab:hover, button.tab.tab--on { background: var(--twilight); color: #fff;
 .clock { font-family: var(--sans); font-weight: 800; font-variant-numeric: tabular-nums; font-size: clamp(4rem, 12vw, 7.5rem); line-height: 1; color: var(--twilight); }
 .clock.low { color: #b45309; }
 .clock.out { color: #9b1c1c; }
-.meter { height: .75rem; border-radius: 999px; background: var(--fog); box-shadow: inset 0 0 0 2px var(--twilight); overflow: hidden; }
-.bar-fill { height: 100%; width: 100%; background: var(--sky); transition: width 250ms linear; }
+.meter { height: .65rem; border: 2px solid var(--twilight); border-radius: 999px; background: var(--fog); overflow: hidden; }
+.bar-fill { height: 100%; width: 100%; background: var(--sky); border-radius: 999px; transition: width 250ms linear; }
 .inline-note { display: flex; gap: .5rem; }
 .queue-list { list-style: none; margin: 1rem 0 0; padding: 0; display: grid; }
 .queue-list li { display: flex; align-items: center; gap: .4rem; padding: .5rem 0; border-top: 1px solid var(--rule); flex-wrap: wrap; }
@@ -262,7 +262,7 @@ body.bare { background: var(--twilight); color: #fff; }
 .big-clock { font-weight: 800; font-variant-numeric: tabular-nums; font-size: clamp(6rem, 22vw, 20rem); line-height: 1; }
 .big-clock.low { color: #ffd166; }
 .big-clock.out { color: #ff8a80; }
-.display .meter { width: min(70rem, 100%); height: 1.1rem; background: rgb(255 255 255 / .15); box-shadow: none; }
+.display .meter { width: min(70rem, 100%); height: 1.1rem; background: rgb(255 255 255 / .15); border-color: rgb(255 255 255 / .35); }
 .display .bar-fill { background: var(--sky); }
 .queue ol { margin: .75rem 0 0; padding: 0; list-style: none; counter-reset: next; display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; font-size: clamp(1.25rem, 2.6vw, 2.25rem); }
 .queue li { counter-increment: next; display: inline-flex; align-items: baseline; gap: .6rem; }
@@ -385,3 +385,48 @@ p.reminder { margin: 0; }
 .update { position: fixed; left: 50%; bottom: 1rem; transform: translateX(-50%); z-index: 40; display: flex; align-items: center; gap: 1rem; padding: .6rem .75rem .6rem 1.1rem; background: var(--twilight); color: #fff; border-radius: 999px; box-shadow: 0 8px 24px rgb(20 20 60 / .3); font-weight: 600; }
 .update .btn--primary { background: #fff; color: var(--twilight); border-color: #fff; }
 .big-clock.paused { opacity: .55; }
+.d-status { position: fixed; right: 1rem; bottom: .75rem; font-size: .875rem; font-weight: 600; color: #ffd166; }
+
+
+/* ================= chairing in a real room: the Floor fits one screen ================= */
+.lead--bar { display: flex; flex-direction: row; flex-wrap: wrap; align-items: baseline; justify-content: flex-start; gap: .25rem .9rem; text-align: left; }
+.lead--bar .title { font-size: 1.4rem; text-align: left; margin: 0; }
+button.btn, .btn { white-space: nowrap; }
+.inline-note input { min-width: 0; }
+
+@media (min-width: 64rem) {
+  /* The page itself never scrolls on the Floor: the header stays, the Floor fills what is left, and a long list scrolls inside its own card. */
+  body.console-body { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+  body.console-body > header { flex: none; }
+  body.console-body > main.console { flex: 1; min-height: 0; overflow: auto; max-width: 112rem; width: 100%; padding-block: .6rem .75rem; gap: .6rem; align-content: start; }
+  main.console .card { padding: .9rem 1rem; }
+  main.console .card > h2, main.console .card-head h2 { font-size: 1.15rem; margin-bottom: .6rem; }
+  main.console .card-head { margin-bottom: .5rem; }
+  main.console > .grid-floor { height: 100%; min-height: 0; grid-template-columns: minmax(0, 1fr) minmax(26rem, 36rem); align-items: stretch; }
+  main.console > .grid-floor > .card { overflow: auto; min-height: 0; }
+  main.console .floor-side { display: flex; flex-direction: column; gap: .6rem; min-height: 0; }
+  main.console .floor-side > .speaker-card { flex: none; gap: .6rem; }
+  main.console .floor-side > .card:not(.speaker-card) { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  main.console .floor-side .queue-list { flex: 1; min-height: 0; overflow: auto; margin-top: .5rem; }
+  main.console .queue-list li { padding: .3rem 0; }
+  main.console .clock { font-size: clamp(2.75rem, 6.5vh, 4.5rem); }
+  main.console .speaker-name { font-size: clamp(1.25rem, 3vh, 1.75rem); }
+  main.console .modebar { padding-bottom: .5rem; gap: .35rem .75rem; }
+}
+@media (max-height: 46rem) and (min-width: 64rem) {
+  main.console .clock { font-size: 2.75rem; }
+  main.console .proposal { padding: .6rem .75rem; gap: .4rem; }
+}
+
+@media (min-width: 64rem) {
+  /* the speaker: name and clock on one row, then the bar and the buttons */
+  main.console .speaker-card { grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: .75rem; row-gap: .45rem; }
+  main.console .speaker-card > * { grid-column: 1 / -1; }
+  main.console .speaker-card > .speaker-name { grid-column: 1; grid-row: 2; }
+  main.console .speaker-card > .clock { grid-column: 2; grid-row: 2; font-size: clamp(2.5rem, 6vh, 3.75rem); }
+  main.console .speaker-card > .spoke-line { grid-column: 1; grid-row: 3; font-size: .875rem; }
+  main.console .speaker-card > .meter { grid-row: 4; }
+  main.console .speaker-card > .btn-row { grid-row: 5; }
+  main.console .speaker-card > .inline-note { grid-row: 6; }
+  main.console .modebar { grid-row: 1; }
+}

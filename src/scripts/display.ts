@@ -1,7 +1,9 @@
 // The forward-facing screen: what delegates see. Never shows notes, scores or any per-delegate feedback.
 import { store } from '../lib/store';
-import { derive, elapsed, clock, unmodLeft, allTypes, majorityFor, modCapacity, type Committee } from '../lib/engine';
+import { derive, elapsed, clock, unmodLeft, now as nowMs, allTypes, majorityFor, modCapacity, type Committee } from '../lib/engine';
 import { h, mount } from '../lib/ui';
+import { poll, sync } from '../lib/sync';
+import { supabase } from '../lib/supabase';
 
 const id = location.pathname.split('/')[2];
 const app = document.getElementById('app')!;
@@ -48,7 +50,7 @@ function render() {
 function tick() {
   if (!c) return;
   const s = derive(c);
-  const now = Date.now();
+  const now = nowMs();
   if (s.mode.kind === 'voting') return;
   if (s.mode.kind === 'unmod') {
     clockEl.textContent = clock(unmodLeft(s.mode, now));
@@ -66,3 +68,22 @@ function tick() {
 render();
 store.subscribe(render);
 setInterval(tick, 250);
+
+// Stay current without anyone touching this screen. In the same browser as the console, updates arrive instantly
+// through the shared store. On another device they come from the database every couple of seconds. If neither is
+// working, say so in a corner instead of showing a stale clock as if it were live.
+const status = h('div', { class: 'd-status', role: 'status' });
+document.body.append(status);
+let lastOk = Date.now();
+if (supabase) {
+  const loop = async () => {
+    try { if (await poll(id)) lastOk = Date.now(); } catch { /* try again */ }
+    setTimeout(loop, document.hidden ? 8000 : 2000);
+  };
+  sync().catch(() => {}).finally(loop);
+  setInterval(() => { sync().catch(() => {}); }, 30_000);      // names, settings and anything polling can't see
+  setInterval(() => {
+    const stale = Date.now() - lastOk > 15_000;
+    status.textContent = stale ? (navigator.onLine ? 'Not updating' : 'Offline: showing the last update') : '';
+  }, 2000);
+}

@@ -129,11 +129,20 @@ async function pull() {
   const ids = rows.map((c) => c.id as string);
   wr(LINKED, [...new Set([...rd(LINKED), ...ids])]);
   if (!ids.length) return;
-  const [ds, es] = await Promise.all([
-    db.from('ch_delegates').select('id, committee_id, name').in('committee_id', ids).order('sort'),
-    db.from('ch_events').select('id, t, type, body, committee_id').in('committee_id', ids).order('t').limit(20000),
-  ]);
-  for (const r of [ds, es]) if (r.error) throw r.error;
+  // Delegates for all committees; events per committee, and only the ones newer than what this device already has
+  // (a little overlap, in case a device's clock was behind). A new device has none yet, so it fetches everything once.
+  const ds = await db.from('ch_delegates').select('id, committee_id, name').in('committee_id', ids).order('sort');
+  if (ds.error) throw ds.error;
+  const eventRows = await Promise.all(ids.map(async (cid) => {
+    const mine = store.get(cid);
+    const last = mine?.events.reduce((m, e) => Math.max(m, e.t), 0) ?? 0;
+    let q = db.from('ch_events').select('id, t, type, body, committee_id').eq('committee_id', cid).order('t').limit(20000);
+    if (last) q = q.gt('t', new Date(Math.max(0, last - 60_000)).toISOString());
+    const r = await q;
+    if (r.error) throw r.error;
+    return r.data ?? [];
+  }));
+  const es = { data: eventRows.flat() };
   const synced = new Set(rd(SYNCED));
   for (const row of rows) {
     const mine = store.get(row.id);
@@ -248,7 +257,7 @@ export function startSync() {
   fixIds();
   store.migrate();
   let t: number | undefined;
-  const later = () => { clearTimeout(t); t = window.setTimeout(sync, 3000); };
+  const later = () => { clearTimeout(t); t = window.setTimeout(sync, 600); };   // events go out almost at once, so another screen sees a pause quickly
   addEventListener('chairing:dirty', () => { set({ pending: pendingCount() }); later(); });
   addEventListener('online', sync);
   setInterval(sync, 60_000);
@@ -263,4 +272,28 @@ export async function verifyPassword(password: string): Promise<string> {
   if (!email) return 'Sign in to delete.';
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   return error ? 'That password doesn’t match.' : '';
+}
+
+
+/**
+ * A light catch-up for a screen that is open (the projector, or a second chair): only events newer than the last
+ * one it has. Returns false if it couldn't reach the server. The whole picture is refreshed by sync() less often.
+ */
+export async function poll(id: string): Promise<boolean> {
+  if (!supabase) return false;
+  const { data: sess } = await supabase.auth.getSession();
+  if (!sess.session) return false;
+  const c = store.get(id);
+  if (!c) { await sync(); return !!store.get(id); }
+  const last = c.events.reduce((m, e) => Math.max(m, e.t), 0);
+  const { data, error } = await supabase.from('ch_events').select('id, t, type, body').eq('committee_id', id).gt('t', new Date(Math.max(0, last - 60_000)).toISOString()).order('t').limit(500);
+  if (error) return false;
+  const have = new Set(c.events.map((e) => e.id));
+  const fresh = (data ?? []).map(fromRow).filter((e) => !have.has(e.id));
+  if (fresh.length) {
+    c.events = [...c.events, ...fresh].sort((a, b) => a.t - b.t);
+    store.put(c, true);
+    const done = new Set(rd(SYNCED)); fresh.forEach((e) => done.add(e.id)); wr(SYNCED, [...done]);
+  }
+  return true;
 }

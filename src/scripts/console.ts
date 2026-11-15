@@ -1,17 +1,21 @@
 // The chair console: the back of the room. Everything here writes events; nothing mutates state directly.
 import { store } from '../lib/store';
-import { derive, statsFor, unmodLeft, evaluate, recommend, CRITERIA, DEFAULT_WEIGHTS, WEIGHT_PRESETS, modCapacity, modTaken, modFull, motionTypes, allTypes, majorityFor, parseNames, hasTopic, checkMod, elapsed, clock, ev, uid, effective, AWARD_CATEGORIES, NOTE_TAGS, type Committee, type State, type Attendance } from '../lib/engine';
+import { derive, statsFor, unmodLeft, now as nowMs, evaluate, recommend, CRITERIA, DEFAULT_WEIGHTS, WEIGHT_PRESETS, modCapacity, modTaken, modFull, motionTypes, allTypes, majorityFor, parseNames, hasTopic, checkMod, elapsed, clock, ev, uid, effective, AWARD_CATEGORIES, NOTE_TAGS, type Committee, type State, type Attendance } from '../lib/engine';
 import { h, $, mount } from '../lib/ui';
+import { poll } from '../lib/sync';
+import { supabase } from '../lib/supabase';
 import { askConfirm } from '../lib/confirm';
 import { askDelete } from '../lib/guard';
 
 const id = location.pathname.split('/')[2];
 const app = document.getElementById('app')!;
 const tools = document.getElementById('bar-tools')!;
+document.body.classList.add('console-body');
 store.migrate();
 type Tab = 'floor' | 'roll' | 'delegates' | 'perf' | 'setup';
 let tab: Tab = 'floor';
 let amending: string | null = null;   // the proposed motion being amended, if any
+let noteOpen = false;                 // the quick-note box under the speaker is closed until asked for
 let menu = false;                     // the tab row stays out of sight on the Floor until the chair asks for it
 let picked: string | null = null;     // delegate open on the Delegates tab
 let c: Committee | undefined;
@@ -43,13 +47,14 @@ function speakerCard() {
 
   const note = h('input', { type: 'text', placeholder: 'Quick note on this speaker', 'aria-label': 'Quick note on this speaker', autocomplete: 'off' }) as HTMLInputElement;
   const body = sp
-    ? [h('div', { class: 'speaker-name' }, nameOf(sp.d)), spokeText(sp.d) ? h('div', { class: 'muted' }, `Already ${spokeText(sp.d)}`) : null, clockEl, h('div', { class: 'meter' }, barEl),
+    ? [h('div', { class: 'speaker-name' }, nameOf(sp.d)), spokeText(sp.d) ? h('div', { class: 'muted spoke-line' }, `Already ${spokeText(sp.d)}`) : null, clockEl, h('div', { class: 'meter' }, barEl),
        h('div', { class: 'btn-row' },
          sp.since != null ? btn('Pause', () => push('pause')) : btn('Resume', () => push('resume'), 'btn btn--primary btn--sm'),
          btn('Stop', () => push('stop', { how: 'done' }), 'btn btn--primary btn--sm'),
          btn('Yield to chair', () => push('stop', { how: 'chair' })),
-         btn('Yield to questions', () => push('stop', { how: 'questions' }))),
-       h('form', { class: 'inline-note', onsubmit: (e: Event) => { e.preventDefault(); if (note.value.trim()) { push('note', { d: sp.d, text: note.value.trim(), tag: '' }); } } }, note, h('button', { class: 'btn btn--ghost btn--sm' }, 'Add note'))]
+         btn('Yield to questions', () => push('stop', { how: 'questions' })),
+         btn(noteOpen ? 'Close note' : 'Note', () => { noteOpen = !noteOpen; render(); if (noteOpen) setTimeout(() => (document.querySelector('.inline-note input') as HTMLElement | null)?.focus(), 0); })),
+       noteOpen ? h('form', { class: 'inline-note', onsubmit: (e: Event) => { e.preventDefault(); if (note.value.trim()) { noteOpen = false; push('note', { d: sp.d, text: note.value.trim(), tag: '' }); } } }, note, h('button', { class: 'btn btn--ghost btn--sm' }, 'Add note')) : null]
     : [h('div', { class: 'speaker-name muted' }, mode.kind === 'unmod' || mode.kind === 'voting' ? mode.label : 'No one speaking'),
        mode.kind === 'unmod' || mode.kind === 'voting' ? null : h('div', { class: 'btn-row' },
          btn(list.length ? `Start ${nameOf(list[0])}` : 'Start next', () => list[0] && push('start', { d: list[0] }), 'btn btn--primary', { disabled: list.length ? null : true }))];
@@ -440,7 +445,7 @@ function render() {
   const showTabs = menu || tab !== 'floor';
   // Hidden on purpose: feedback, scores and setup shouldn't be readable from across the room.
   mount(app, 
-    h('div', { class: 'lead' }, c.conferenceId ? h('a', { class: 'crumb', href: `/conf/${c.conferenceId}` }, `← ${store.conf(c.conferenceId)?.name || c.conference || 'Conference'}`) : h('a', { class: 'crumb', href: '/' }, '← All conferences'), h('h1', { class: 'title' }, c.name.toLowerCase())),
+    h('div', { class: 'lead lead--bar' }, c.conferenceId ? h('a', { class: 'crumb', href: `/conf/${c.conferenceId}` }, `← ${store.conf(c.conferenceId)?.name || c.conference || 'Conference'}`) : h('a', { class: 'crumb', href: '/' }, '← All conferences'), h('h1', { class: 'title' }, c.name.toLowerCase())),
     showTabs ? h('nav', { class: 'tabs', 'aria-label': 'Sections' },
       ...(showTabs ? tabs.map(([k, label]) => h('button', { type: 'button', class: 'tab' + (k === tab ? ' tab--on' : ''), 'aria-current': k === tab ? 'page' : null, onclick: () => { tab = k; menu = k !== 'floor'; if (k !== 'delegates') picked = null; render(); } }, label)) : [])) : null,
 
@@ -451,7 +456,7 @@ function render() {
 
 function tick() {
   if (!c || !clockEl) return;
-  const now = Date.now();
+  const now = nowMs();
   if (s.speaking) {
     const left = s.speaking.allotted - elapsed(s.speaking, now);
     clockEl.textContent = clock(Math.ceil(left));
@@ -501,3 +506,5 @@ addEventListener('blur', lock);
 render();
 store.subscribe(render);
 setInterval(tick, 250);
+// A second chair, or the same chair on another device, stays in step: catch up on new events every few seconds.
+if (supabase) setInterval(() => { if (!document.hidden) poll(id).catch(() => {}); }, 3000);

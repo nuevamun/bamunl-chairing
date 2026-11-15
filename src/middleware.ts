@@ -20,7 +20,7 @@ export const onRequest = defineMiddleware(async ({ request, cookies, locals, url
   }
 
   const open = url.pathname === '/login';
-  if (!locals.who && !open) return url.pathname.startsWith('/api/') ? new Response('Sign in first', { status: 401 }) : redirect('/login');
+  if (!locals.who && !open) return url.pathname.startsWith('/api/') ? new Response('Sign in first', { status: 401 }) : redirect(`/login?next=${encodeURIComponent(url.pathname + url.search)}`);
   if (locals.who && open) return redirect('/');
   const res = await next();
   try { res.headers.set('Cache-Control', 'private, no-store'); } catch { /* immutable response */ }

@@ -123,6 +123,14 @@ export function unmodLeft(m: Extract<Mode, { kind: 'unmod' }>, now: number) {
   return m.total - (m.acc + (m.since != null ? now - m.since : 0)) / 1000;
 }
 
+/**
+ * The time everything is stamped and measured with. Normally the device clock. If a device's clock is clearly off
+ * from the server's (seconds or minutes), sync nudges this so a pause pressed on one screen lines up on another.
+ */
+let clockOffset = 0;
+export const setClockOffset = (ms: number) => { clockOffset = ms; };
+export const now = () => Date.now() + clockOffset;
+
 export const uid = () => (globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2) + Date.now().toString(36));
 
 /** Events that count: everything except what an `undo` cancelled, and the undo events themselves. */
@@ -321,7 +329,7 @@ export const NOTE_TAGS = ['Strength', 'Work on', 'Award', 'Follow up'];
 export function newCommittee(name: string, conference = '', conferenceId?: string): Committee {
   return { id: uid(), name, conference, conferenceId, needsOpen: true, config: structuredClone(DEFAULT_CONFIG), delegates: [], events: [] };
 }
-export const ev = (type: string, rest: Record<string, any> = {}): Ev => ({ id: uid(), t: Date.now(), type, ...rest });
+export const ev = (type: string, rest: Record<string, any> = {}): Ev => ({ id: uid(), t: now(), type, ...rest });
 
 /**
  * Turns pasted text into delegate names. Handles every kind of line break (Windows, old Mac, Word and Google Docs'
