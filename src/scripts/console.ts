@@ -159,7 +159,7 @@ function amendForm(m: { id: string; key: string; label: string; params: Record<s
   const problem = h('p', { class: 'flash flash--err', role: 'alert', hidden: true });
   const topic = h('input', { type: 'text', value: m.topic ?? '', autocomplete: 'off', 'aria-label': 'Topic' }) as HTMLInputElement;
   let by = '';
-  const owner = combo(delegateOpts().map((o) => ({ ...o, off: false })), (o) => { by = o.id; owner.input.value = o.name; }, 'Proposed by', 'Type a name…');
+  const owner = combo(delegateOpts().map((o) => ({ ...o, off: false })), (o) => { by = o.id; owner.input.value = o.name; }, 'Delegation', 'Type a name…');
   owner.input.addEventListener('input', () => { by = ''; });
   return h('li', { class: 'proposal proposal--amend' },
     h('div', { class: 'proposal-top' }, h('strong', null, 'Amend'), h('span', { class: 'muted' }, m.label)),
@@ -175,7 +175,7 @@ function amendForm(m: { id: string; key: string; label: string; params: Record<s
       hasTopic(type) ? h('label', { class: 'field field--tight' }, h('span', null, 'Topic'), topic) : null,
       fields,
       problem,
-      h('div', { class: 'field field--tight' }, h('span', null, 'Proposed by'), owner, h('small', { class: 'muted' }, `${m.by ? `Currently ${nameOf(m.by)}.` : 'Nobody was named when it was proposed.'} Pick who proposed the amendment: they become its proposer.`)),
+      h('div', { class: 'field field--tight' }, h('span', null, 'Delegation'), owner, h('small', { class: 'muted' }, m.by ? `Currently ${nameOf(m.by)}.` : 'None named yet.')),
       h('div', { class: 'btn-row' }, h('button', { class: 'btn btn--primary btn--sm' }, 'Save amendment'), btn('Cancel', () => { amending = null; render(); }))));
 }
 
@@ -196,7 +196,7 @@ function motionCard() {
     const problem = h('p', { class: 'flash flash--err', role: 'alert', hidden: true });
     const topic = h('input', { type: 'text', name: 'topic', placeholder: 'What is the caucus about?', autocomplete: 'off', 'aria-label': 'Topic' }) as HTMLInputElement;
     let by = '';
-    const owner = combo(delegateOpts().map((o) => ({ ...o, off: false })), (o) => { by = o.id; owner.input.value = o.name; }, 'Proposed by', 'Type a name…');
+    const owner = combo(delegateOpts().map((o) => ({ ...o, off: false })), (o) => { by = o.id; owner.input.value = o.name; }, 'Delegation', 'Type a name…');
     owner.input.addEventListener('input', () => { by = ''; });
     form = h('form', { class: 'form motion-form', onsubmit: (e: Event) => {
       e.preventDefault();
@@ -213,7 +213,7 @@ function motionCard() {
       hasTopic(m) ? h('label', { class: 'field field--tight' }, h('span', null, 'Topic'), topic) : null,
       fs.length ? fields : null,
       problem,
-      h('div', { class: 'field field--tight' }, h('span', null, 'Proposed by (optional)'), owner),
+      h('div', { class: 'field field--tight' }, h('span', null, 'Delegation (optional)'), owner),
       h('div', { class: 'btn-row' }, h('button', { class: 'btn btn--primary btn--sm' }, 'Propose'), btn('Cancel', () => { proposing = null; render(); })));
   }
 
