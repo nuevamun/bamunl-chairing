@@ -73,6 +73,8 @@ export const majorityFor = (config: Config, key: string) => allTypes(config).fin
 export type Ev = { id: string; t: number; type: string; [k: string]: any };
 export type Committee = { id: string; name: string; conference: string; config: Config; delegates: Delegate[]; events: Ev[]; conferenceId?: string; /** committees made now start with no speakers list; older ones keep the list they had */ needsOpen?: boolean; /** ms; set when deleted, kept for TRASH_DAYS so it can be restored */ deletedAt?: number };
 export const TRASH_DAYS = 30;
+/** The database refuses more than this per committee, so the app stops short of it instead of failing to sync. */
+export const MAX_DELEGATES = 400;
 /** A conference holds committees. Deleting one hides its committees too; restoring brings them back. */
 export type Conference = { id: string; name: string; /** the club (school) that owns it; subadmins see only their own club's, the master sees all */ schoolId?: string; deletedAt?: number };
 
@@ -133,10 +135,53 @@ export const now = () => Date.now() + clockOffset;
 
 export const uid = () => (globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2) + Date.now().toString(36));
 
+const str = (x: unknown, n = 200) => (typeof x === 'string' ? x.slice(0, n) : '');
+const oneOf = <T extends string>(x: unknown, ok: readonly T[]): T | undefined => (typeof x === 'string' && (ok as readonly string[]).includes(x) ? (x as T) : undefined);
+const count = (x: unknown, max = 100_000) => (typeof x === 'number' && Number.isFinite(x) ? Math.min(max, Math.max(0, x)) : 0);
+function cleanParams(x: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (x && typeof x === 'object' && !Array.isArray(x)) {
+    for (const [k, v] of Object.entries(x as Record<string, unknown>)) {
+      if (k === '__proto__' || k === 'constructor' || k === 'prototype' || k.length > 20) continue;
+      if (typeof v === 'number' && Number.isFinite(v)) out[k] = Math.min(1_000_000, Math.max(0, v));
+    }
+  }
+  return out;
+}
+/**
+ * Every event is checked and rebuilt before it can touch the state. Records come from a database other people can
+ * write to (a conference login, a bug), so a missing field, a wrong type or a huge number must never crash the
+ * console for the chair or change anything it shouldn't. A record that makes no sense is dropped.
+ */
+export function sanitize(raw: unknown): Ev | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const e = raw as Record<string, unknown>;
+  if (typeof e.id !== 'string' || typeof e.type !== 'string' || typeof e.t !== 'number' || !Number.isFinite(e.t)) return null;
+  const base = { id: e.id, t: e.t, type: e.type };
+  switch (e.type) {
+    case 'attend': return { ...base, d: str(e.d), s: oneOf(e.s, ['present', 'pv', 'absent'] as const) ?? 'absent' };
+    case 'add': case 'drop': return { ...base, d: str(e.d) };
+    case 'move': return { ...base, d: str(e.d), by: e.by === 1 ? 1 : -1 };
+    case 'start': return { ...base, d: str(e.d), allotted: typeof e.allotted === 'number' && Number.isFinite(e.allotted) && e.allotted > 0 ? Math.min(86_400, e.allotted) : undefined };
+    case 'stop': return { ...base, how: oneOf(e.how, ['done', 'chair', 'questions'] as const) ?? 'done', to: str(e.to) };
+    case 'floor': return { ...base, key: str(e.key, 40), params: cleanParams(e.params), by: str(e.by), topic: str(e.topic), name: str(e.name), note: str(e.note) };
+    case 'withdraw': return { ...base, target: str(e.target, 80) };
+    case 'vote': return { ...base, target: e.target === undefined ? undefined : str(e.target, 80), result: oneOf(e.result, ['passed', 'failed'] as const), yes: count(e.yes), no: count(e.no) };
+    case 'amend': return { ...base, target: str(e.target, 80), params: e.params === undefined ? undefined : cleanParams(e.params), by: str(e.by), topic: e.topic === undefined ? undefined : str(e.topic), name: str(e.name) };
+    case 'proposer_slot': { const slot = oneOf(e.slot, ['first', 'last', 'none'] as const); return slot ? { ...base, slot } : null; }
+    case 'note': return { ...base, d: str(e.d), text: str(e.text, 2000), tag: str(e.tag, 40) };
+    case 'score': return { ...base, d: str(e.d), cat: str(e.cat, 40), v: Math.round(Math.min(5, count(e.v))) };
+    case 'undo': return { ...base, target: str(e.target, 80) };
+    case 'pause': case 'resume': case 'clear_proposed': case 'caucus_start': case 'caucus_pause': case 'caucus_resume': case 'end_caucus': return base;
+    default: return null;                                         // an unknown kind of event does nothing
+  }
+}
+
 /** Events that count: everything except what an `undo` cancelled, and the undo events themselves. */
 export function effective(events: Ev[]): Ev[] {
-  const dead = new Set(events.filter((e) => e.type === 'undo').map((e) => e.target));
-  return events.filter((e) => e.type !== 'undo' && !dead.has(e.id));
+  const dead = new Set(events.filter((e) => e && e.type === 'undo').map((e) => e.target));
+  // Undoing a Stop brings the speaker back, paused at the moment they were stopped, so the time in between isn't charged to them.
+  return events.flatMap((e) => (e.type === 'undo' ? [] : dead.has(e.id) ? (e.type === 'stop' ? [{ id: `${e.id}:undone`, t: e.t, type: 'pause' }] : []) : [e]));
 }
 
 export function passes(majority: Config['majority'], yes: number, no: number) {
@@ -174,7 +219,9 @@ export function derive(c: Committee): State {
     s.speaking = null;
   };
 
-  for (const e of effective(c.events)) {
+  for (const raw of effective(c.events.filter((x) => x && typeof x === 'object'))) {
+    const e = sanitize(raw);
+    if (!e) continue;
     s.eventCount++;
     switch (e.type) {
       case 'attend': s.attendance[e.d] = e.s; break;
@@ -195,6 +242,7 @@ export function derive(c: Committee): State {
         break;
       }
       case 'start': {
+        if (s.speaking?.d === e.d) break;           // already speaking: a double click must not end and restart them
         // A full moderated caucus has no place for someone who isn't already on its order of speaking.
         if (s.mode.kind === 'mod' && !s.lists.mod.includes(e.d) && s.speaking?.d !== e.d && modFull(s)) break;
         if (s.speaking) finish(e, 'done');

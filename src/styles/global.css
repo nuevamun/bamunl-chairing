@@ -430,3 +430,9 @@ button.btn, .btn { white-space: nowrap; }
   main.console .speaker-card > .inline-note { grid-row: 6; }
   main.console .modebar { grid-row: 1; }
 }
+
+/* the dropdown list is positioned on the screen by script; it scrolls by itself and never passes the wheel to the page */
+.combo-list { overscroll-behavior: contain; z-index: 60; }
+
+/* long or odd names (up to 120 characters, any script) never break a card */
+.qn, .speaker-name, .past-name, .committee-main strong, .fb-person span, .big-name, .floor-name { overflow-wrap: anywhere; }

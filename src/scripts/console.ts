@@ -1,6 +1,6 @@
 // The chair console: the back of the room. Everything here writes events; nothing mutates state directly.
 import { store } from '../lib/store';
-import { derive, statsFor, unmodLeft, now as nowMs, evaluate, recommend, CRITERIA, DEFAULT_WEIGHTS, WEIGHT_PRESETS, modCapacity, modTaken, modFull, motionTypes, allTypes, majorityFor, parseNames, hasTopic, checkMod, elapsed, clock, ev, uid, effective, AWARD_CATEGORIES, NOTE_TAGS, type Committee, type State, type Attendance } from '../lib/engine';
+import { derive, statsFor, unmodLeft, MAX_DELEGATES, now as nowMs, evaluate, recommend, CRITERIA, DEFAULT_WEIGHTS, WEIGHT_PRESETS, modCapacity, modTaken, modFull, motionTypes, allTypes, majorityFor, parseNames, hasTopic, checkMod, elapsed, clock, ev, uid, effective, AWARD_CATEGORIES, NOTE_TAGS, type Committee, type State, type Attendance } from '../lib/engine';
 import { h, $, mount } from '../lib/ui';
 import { poll } from '../lib/sync';
 import { supabase } from '../lib/supabase';
@@ -15,6 +15,7 @@ store.migrate();
 type Tab = 'floor' | 'roll' | 'delegates' | 'perf' | 'setup';
 let tab: Tab = 'floor';
 let amending: string | null = null;   // the proposed motion being amended, if any
+let setupNote = '';                   // a message on the Setup tab, e.g. when a pasted list was too long
 let noteOpen = false;                 // the quick-note box under the speaker is closed until asked for
 let menu = false;                     // the tab row stays out of sight on the Floor until the chair asks for it
 let picked: string | null = null;     // delegate open on the Delegates tab
@@ -65,7 +66,7 @@ function speakerCard() {
 let refocusAdd = false;
 type Opt = { id: string; name: string; off: boolean; note: string };
 /** Type to filter, arrows and Enter to choose, click works too. `onPick` gets the chosen option. */
-function combo(all: Opt[], onPick: (o: Opt) => void, label: string, placeholder: string, refocus = false, dropdown = false) {
+function combo(all: Opt[], onPick: (o: Opt) => void, label: string, placeholder: string, refocus = false, dropdown = false, side: 'below' | 'beside' = 'below') {
   const input = h('input', { type: 'text', role: 'combobox', 'aria-expanded': 'false', 'aria-autocomplete': 'list', 'aria-label': label, placeholder, autocomplete: 'off', spellcheck: 'false' }) as HTMLInputElement;
   const box = h('ul', { class: 'combo-list', role: 'listbox', hidden: true });
   let items: Opt[] = [];
@@ -79,7 +80,28 @@ function combo(all: Opt[], onPick: (o: Opt) => void, label: string, placeholder:
       onmousedown: (e: Event) => { e.preventDefault(); if (!d.off) pick(d); } }, h('span', null, d.name), d.note ? h('small', null, d.note) : null)));
     if (!items.length) box.replaceChildren(h('li', { class: 'opt opt--off' }, 'No match'));
     box.hidden = false; input.setAttribute('aria-expanded', 'true');
+    place();
   };
+  // The list is positioned on the screen itself (not inside the card), so no scrolling card can cut it off. Beside: in the
+  // space to the left of the input, so it never covers the list being filled. Below: under the input, or above if there's no room.
+  const place = () => {
+    if (box.hidden) return;
+    const r = input.getBoundingClientRect(), gap = 8;
+    box.style.position = 'fixed'; box.style.right = 'auto'; box.style.bottom = 'auto';
+    if (side === 'beside' && r.left > 300) {
+      const w = Math.min(340, r.left - 24);
+      box.style.width = `${w}px`; box.style.left = `${r.left - w - 14}px`; box.style.top = `${Math.max(gap, r.top)}px`;
+      box.style.maxHeight = `${Math.max(160, innerHeight - Math.max(gap, r.top) - gap)}px`;
+    } else {
+      const below = innerHeight - r.bottom - gap, above = r.top - gap;
+      const up = below < 180 && above > below;
+      box.style.width = `${r.width}px`; box.style.left = `${r.left}px`;
+      box.style.maxHeight = `${Math.max(120, Math.min(320, up ? above : below))}px`;
+      if (up) { box.style.top = 'auto'; box.style.bottom = `${innerHeight - r.top + 4}px`; } else box.style.top = `${r.bottom + 4}px`;
+    }
+  };
+  addEventListener('resize', place);
+  document.addEventListener('scroll', place, true);
   const pick = (d: Opt) => { box.hidden = true; onPick(d); };
   const move = (by: number) => {
     const ok = items.map((d, i) => (d.off ? -1 : i)).filter((i) => i >= 0);
@@ -116,7 +138,7 @@ function listCard() {
   const list = s.lists[key];
   const wasAdding = refocusAdd; refocusAdd = false;
   const full = key === 'mod' && modFull(s);
-  const picker = combo(delegateOpts(list, full), (o) => { refocusAdd = true; push('add', { d: o.id }); }, 'Add a delegate to the list', 'Add a delegate…', wasAdding, true);
+  const picker = combo(delegateOpts(list, full), (o) => { refocusAdd = true; push('add', { d: o.id }); }, 'Add a delegate to the list', 'Add a delegate…', wasAdding, true, 'beside');
   // A moderated caucus just passed: its proposer decides where they speak. Nothing starts until the chair does.
   const ask = mode.kind === 'mod' && !mode.slot && mode.proposer
     ? h('div', { class: 'ask' }, h('p', null, h('strong', null, nameOf(mode.proposer)), ' proposed this. Speak:'),
@@ -355,11 +377,14 @@ function setupTab() {
       h('div', { class: 'form-actions' }, h('button', { class: 'btn btn--primary' }, 'Save'))),
     h('form', { class: 'card form', onsubmit: (e: Event) => {
       e.preventDefault(); const n = store.get(id)!;
-      for (const line of parseNames(bulk.value)) if (!n.delegates.some((d) => d.name.toLowerCase() === line.toLowerCase())) n.delegates.push({ id: uid(), name: line });
+      const room = Math.max(0, MAX_DELEGATES - n.delegates.length);
+      const fresh = parseNames(bulk.value).filter((line) => !n.delegates.some((d) => d.name.toLowerCase() === line.toLowerCase()));
+      for (const line of fresh.slice(0, room)) n.delegates.push({ id: uid(), name: line });
+      setupNote = fresh.length > room ? `Added ${room}. A committee holds at most ${MAX_DELEGATES} delegates.` : '';
       store.put(n); render();
-    } }, h('h2', null, 'delegates'), bulk, h('div', { class: 'form-actions' }, h('button', { class: 'btn btn--primary' }, 'Add'))),
+    } }, h('h2', null, 'delegates'), setupNote ? h('p', { class: 'flash flash--err', role: 'alert' }, setupNote) : null, bulk, h('div', { class: 'form-actions' }, h('button', { class: 'btn btn--primary' }, 'Add'))),
     h('section', { class: 'card' }, h('h2', null, 'delegates'), h('div', { class: 'rows' }, ...c!.delegates.map((d) => h('div', { class: 'r' }, h('span', null, d.name),
-      btn('Remove', async () => { if (await askConfirm(`Remove ${d.name}?`, 'Their speeches and notes stay in the log.', 'Remove', true)) { const n = store.get(id)!; n.delegates = n.delegates.filter((x) => x.id !== d.id); store.put(n); render(); } }, 'btn btn--danger btn--sm'))))),
+      btn('Remove', async () => { if (await askConfirm(`Remove ${d.name}?`, 'Their speeches and notes stay in the log.', 'Remove', true)) { if (s.speaking?.d === d.id) store.append(id, ev('stop', { how: 'done' })); store.append(id, ev('drop', { d: d.id })); const n = store.get(id)!; n.delegates = n.delegates.filter((x) => x.id !== d.id); store.put(n); render(); } }, 'btn btn--danger btn--sm'))))),
     h('section', { class: 'card' }, h('h2', null, 'data'), h('div', { class: 'btn-row' },
       btn('Download JSON', () => { const a = h('a', { href: URL.createObjectURL(new Blob([JSON.stringify(c, null, 2)], { type: 'application/json' })), download: `${c!.name}.json` }); a.click(); }),
       btn('Delete committee', async () => { if (await askDelete(`Delete ${c!.name}?`, 'Kept in Recently deleted for 30 days, then removed for good with its feedback and scores.')) { store.softDelete(id); location.href = c!.conferenceId ? `/conf/${c!.conferenceId}` : '/'; } }, 'btn btn--danger btn--sm'))));
@@ -435,6 +460,11 @@ function restore(snap: ReturnType<typeof snapshot>) {
 
 function render() {
   const snap = snapshot();
+  // A redraw rebuilds the cards; without this the list jumps back to the top on every click.
+  const spots = () => ({ main: app.scrollTop, queue: (app.querySelector('.queue-list') as HTMLElement | null), floor: (app.querySelector('.grid-floor > .card') as HTMLElement | null) });
+  const before = spots();
+  const q0 = before.queue ? { top: before.queue.scrollTop, bottom: before.queue.scrollTop + before.queue.clientHeight >= before.queue.scrollHeight - 8 } : null;
+  const f0 = before.floor?.scrollTop ?? 0;
   c = store.get(id);
   if (!c) { mount(app, h('div', { class: 'lead' }, h('h1', { class: 'title' }, 'not found'), h('a', { class: 'btn btn--primary', href: '/' }, 'All committees'))); return; }
   s = derive(c);
@@ -451,6 +481,10 @@ function render() {
 
     body);
   restore(snap);
+  app.scrollTop = before.main;
+  const after = spots();
+  if (after.queue && q0) after.queue.scrollTop = q0.bottom && q0.top > 0 ? after.queue.scrollHeight : q0.top;   // at the bottom stays at the bottom, so a new name is in view
+  if (after.floor) after.floor.scrollTop = f0;
   tick();
 }
 

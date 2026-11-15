@@ -1,7 +1,6 @@
 import { signIn, signOut, onStatus } from '../lib/sync';
-// Only ever back to a page on this site: a path starting with one slash, never //host or a full address.
-const wanted = new URLSearchParams(location.search).get('next') ?? '';
-const dest = /^\/(?![\/\\])/.test(wanted) ? wanted : '/';
+import { safeNext } from '../lib/redirect';
+const dest = safeNext(new URLSearchParams(location.search).get('next'), location.origin);
 const f = document.getElementById('f') as HTMLFormElement;
 const err = document.getElementById('err')!;
 const out = document.getElementById('out') as HTMLButtonElement;

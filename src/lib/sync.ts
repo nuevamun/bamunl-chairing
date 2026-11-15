@@ -7,6 +7,7 @@ import { DEFAULT_CONFIG, TRASH_DAYS, type Committee, type Ev } from './engine';
 
 // Logins are the league admin's: a username the master created, mapped to a made-up address (see league-admin/src/lib/auth.ts).
 import { adminEmail, confEmail } from './logins';
+import { askConfirm } from './confirm';
 
 const SYNCED = 'chairing:synced';      // ids of events the database already has
 const LINKED = 'chairing:linked';
@@ -27,6 +28,13 @@ function pendingCount() {
   const done = new Set(rd(SYNCED)); const linked = new Set(rd(LINKED));
   return store.everything().filter((c) => linked.has(c.id)).reduce((n, c) => n + c.events.filter((e) => !done.has(e.id)).length, 0);
 }
+/** Work that exists only on this device: events not yet sent, and committees that never reached the database. */
+export function unsaved() {
+  const linked = new Set(rd(LINKED));
+  const events = pendingCount();
+  const local = store.everything().filter((c) => !linked.has(c.id) && (c.events.length || c.delegates.length)).length;
+  return { events, committees: local, any: events + local > 0 };
+}
 
 export async function signIn(username: string, password: string) {
   if (!supabase) return 'Sync is not set up.';
@@ -39,15 +47,24 @@ export async function signIn(username: string, password: string) {
   await sync();
   return '';
 }
-export async function signOut() {
-  // Send anything still waiting, then clear this device so the next person to sign in can't see this one's committees.
-  try { await sync(); } catch { /* offline: those changes are lost, and the next sign-in says so */ }
+/** Returns false if the person decided not to sign out. */
+export async function signOut(): Promise<boolean> {
+  // Send anything still waiting. If that can't be done (offline), say what would be lost and let them decide.
+  try { await sync(); } catch { /* sync reports its own errors */ }
+  const u = unsaved();
+  if (u.any) {
+    const bits = [u.events ? `${u.events} change${u.events === 1 ? '' : 's'}` : '', u.committees ? `${u.committees} committee${u.committees === 1 ? '' : 's'}` : ''].filter(Boolean).join(' and ');
+    const ok = await askConfirm('Not sent yet', `${bits} only exist on this device. Signing out deletes them. Reconnect first to send them.`, 'Sign out and delete', true);
+    if (!ok) return false;
+  }
   wipeLocal();
   await supabase?.auth.signOut();
   set({ state: 'signed-out', who: undefined });
+  return true;
 }
 
-const LOCAL_KEYS = ['chairing:v1', 'chairing:confs:v1', SYNCED, LINKED, CLINKED, 'chairing:meta', 'chairing:cmeta', 'chairing:me', 'chairing:schools', 'chairing:owner'];
+const LOCAL_KEYS = [   // 'chairing:recovered' is deliberately not here: it is the copy kept when someone else signs in
+ 'chairing:v1', 'chairing:confs:v1', SYNCED, LINKED, CLINKED, 'chairing:meta', 'chairing:cmeta', 'chairing:me', 'chairing:schools', 'chairing:owner'];
 function wipeLocal() { for (const k of LOCAL_KEYS) try { localStorage.removeItem(k); } catch { /* ignore */ } }
 
 let running = false;
@@ -59,7 +76,10 @@ export async function sync() {
   // A different person on this device? Never show them the last person's committees.
   try {
     const prev = localStorage.getItem('chairing:owner');
-    if (prev && prev !== user.id) { wipeLocal(); location.reload(); return; }
+    if (prev && prev !== user.id) {
+      if (unsaved().any) { try { localStorage.setItem('chairing:recovered', JSON.stringify({ at: Date.now(), by: prev, committees: store.everything(), conferences: store.confEverything() })); } catch { /* too big to keep */ } }
+      wipeLocal(); location.reload(); return;
+    }
     localStorage.setItem('chairing:owner', user.id);
   } catch { /* ignore */ }
   running = true; set({ state: 'syncing', who: user.email?.replace(/@.*/, '') ?? '' });

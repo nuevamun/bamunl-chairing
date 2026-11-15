@@ -13,7 +13,7 @@ onStatus((s) => {
     : s.state === 'error' ? `Not synced${s.pending ? ` (${s.pending} waiting)` : ''}: ${s.message ?? ''}`
     : `${s.pending ? `${s.pending} waiting to send` : 'Synced'} · ${s.who ?? ''}`,
     s.who ? ' ' : null,
-    s.who ? h('button', { type: 'button', class: 'linkish', onclick: async () => { await signOut(); location.href = '/login'; } }, 'Sign out') : null].filter((x) => x != null) as Array<Node | string>);
+    s.who ? h('button', { type: 'button', class: 'linkish', onclick: async () => { if (await signOut()) location.href = '/login'; } }, 'Sign out') : null].filter((x) => x != null) as Array<Node | string>);
 });
 startSync();
 

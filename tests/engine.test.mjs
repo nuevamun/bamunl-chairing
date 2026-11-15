@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { derive, statsFor, newCommittee, passes, motionTypes, parseNames, checkMod, DEFAULT_CONFIG, modCapacity, modFull, unmodLeft, evaluate, recommend, WEIGHT_PRESETS } from '../src/lib/engine.ts';
+import { derive, statsFor, newCommittee, passes, motionTypes, parseNames, checkMod, DEFAULT_CONFIG, modCapacity, modFull, unmodLeft, elapsed, evaluate, recommend, WEIGHT_PRESETS } from '../src/lib/engine.ts';
 
 const mk = () => { const c = newCommittee('UNSC'); c.needsOpen = false;   // these tests start with a list already open, like committees made before lists had to be opened
   c.delegates = [{ id: 'a', name: 'France' }, { id: 'b', name: 'Peru' }]; return c; };
@@ -314,4 +314,21 @@ test('an unmoderated caucus clock can be paused and resumed, and never ends by i
   assert.ok(unmodLeft(derive(c).mode, 99_999_999) < 0);                      // way over time: still the chair's call to end it
   E(c, 100_000_000, 'caucus_pause'); E(c, 100_000_001, 'caucus_pause');        // a double pause changes nothing
   assert.equal(derive(c).mode.since, null);
+});
+
+test('undoing a Stop puts the speaker back paused where they stopped', () => {
+  const c = mk();
+  E(c, 0, 'start', { d: 'a' }); E(c, 20_000, 'stop', { how: 'done' });
+  const stopId = c.events[1].id;
+  E(c, 20_500, 'undo', { target: stopId });                                     // the chair realises it was a misclick
+  const s = derive(c);
+  assert.equal(s.speaking.d, 'a'); assert.equal(s.speaking.since, null);        // paused, not running
+  assert.equal(elapsed(s.speaking, 600_000), 20);                                // ten minutes later they have still used only 20 s
+  E(c, 700_000, 'resume'); assert.equal(Math.round(elapsed(derive(c).speaking, 710_000)), 30);
+});
+test('a double click on Start does not give someone an instant empty speech', () => {
+  const c = mk();
+  E(c, 0, 'start', { d: 'a' }); E(c, 50, 'start', { d: 'a' });
+  const s = derive(c);
+  assert.equal(s.speeches.length, 0); assert.equal(s.speaking.d, 'a'); assert.equal(s.speaking.start, 0);
 });
