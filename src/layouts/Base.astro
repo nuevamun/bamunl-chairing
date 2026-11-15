@@ -31,6 +31,7 @@ const { title, bare = false } = Astro.props;
       </header>
     )}
     <slot />
+    <script>import "../scripts/nowheel";</script>
     {!bare && <script>import "../scripts/syncbar";</script>}
   </body>
 </html>
