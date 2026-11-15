@@ -213,10 +213,10 @@ button.tab:hover, button.tab.tab--on { background: var(--twilight); color: #fff;
 .field--tight { gap: .2rem; }
 .fields--3 { grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr)); }
 .grid-floor { display: grid; gap: 1.25rem; grid-template-columns: minmax(0, 1fr); align-items: start; }
-/* wide: speaker left, motions in the middle and widest, speakers list on the right */
-@media (min-width: 72rem) { .grid-floor { grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr) minmax(0, .9fr); } }
+/* wide: motions on the left and widest; the speaker and the speakers list, together, on the right */
+@media (min-width: 64rem) { .grid-floor { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); } }
+.floor-side { display: grid; gap: 1.25rem; align-content: start; min-width: 0; }
 .speaker-card { grid-row: span 2; }
-@media (max-width: 52rem) { .grid-floor { grid-template-columns: minmax(0, 1fr); } .grid-floor > .speaker-card { grid-row: auto; } }
 .speaker-card { display: grid; gap: 1rem; }
 .modebar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; padding-bottom: .75rem; border-bottom: 1px solid var(--rule); }
 .caucus-clock { margin-left: auto; font-variant-numeric: tabular-nums; }
@@ -327,3 +327,9 @@ button.peek { letter-spacing: 0; font-size: .9rem; color: var(--ink-soft); }
 .login-actions input { width: 11rem; padding: .35rem .5rem; }
 .pw { display: flex; gap: .5rem; } .pw input { flex: 1; min-width: 0; }
 .mono { font-family: ui-monospace, Menlo, monospace; font-size: .95em; }
+
+/* no spinner arrows on number boxes */
+input[type=number] { -moz-appearance: textfield; appearance: textfield; }
+input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.proposal--amend { border-color: var(--twilight); background: var(--fog); }
+.ask { padding: .75rem 1rem; margin-bottom: 1rem; border-left: 5px solid var(--twilight); background: var(--fog); display: grid; gap: .6rem; }

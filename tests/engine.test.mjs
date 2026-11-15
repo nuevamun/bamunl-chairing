@@ -58,3 +58,44 @@ test('several motions can be open; the chair picks which passes or fails', () =>
   E(c, 3, 'clear_proposed'); s = derive(c);
   assert.equal(s.proposed.length, 0); assert.equal(s.motions.at(-1).result, 'withdrawn');
 });
+
+test('amending changes the details and the owner, and is kept in the record', () => {
+  const c = mk();
+  E(c, 0, 'floor', { key: 'mod', params: { total: 10, per: 45 }, by: 'a' });
+  const id = c.events[0].id;
+  E(c, 1, 'amend', { target: id, params: { total: 5, per: 30 }, by: 'b' });
+  let s = derive(c);
+  assert.deepEqual(s.proposed[0].params, { total: 5, per: 30 });
+  assert.equal(s.proposed[0].by, 'b'); assert.equal(s.proposed[0].amended, true);
+  E(c, 2, 'vote', { target: id, result: 'passed' });
+  s = derive(c);
+  assert.equal(s.mode.total, 300); assert.equal(s.mode.per, 30);       // the amended numbers are what took effect
+  assert.equal(s.motions[0].by, 'b'); assert.equal(s.motions[0].amended, true);
+  E(c, 3, 'undo', { target: c.events[1].id });                         // undo of the amend restores the original
+  assert.equal(derive(c).mode.total, 600);
+});
+
+test('a moderated caucus opens the list without starting the clock; the proposer picks first or last', () => {
+  const c = mk();
+  c.delegates.push({ id: 'z', name: 'Chad' });
+  E(c, 0, 'floor', { key: 'mod', params: { total: 10, per: 45 }, by: 'a' }); E(c, 1, 'vote', { result: 'passed' });
+  let s = derive(c);
+  assert.equal(s.mode.kind, 'mod'); assert.equal(s.mode.startedAt, null); assert.equal(s.mode.slot, '');
+  E(c, 2, 'add', { d: 'b' });
+  E(c, 3, 'proposer_slot', { slot: 'last' });
+  E(c, 4, 'add', { d: 'z' });                                  // someone added later still goes before the proposer
+  s = derive(c);
+  assert.deepEqual(s.lists.mod, ['b', 'z', 'a']);
+  assert.equal(s.mode.startedAt, null);                         // still not started
+  E(c, 5, 'start', { d: 'b' });
+  assert.equal(derive(c).mode.startedAt, 5);                    // the clock starts with the first speaker
+});
+test('proposer can speak first, or skip', () => {
+  const c = mk();
+  E(c, 0, 'floor', { key: 'mod', params: { total: 5, per: 30 }, by: 'a' }); E(c, 1, 'vote', { result: 'passed' });
+  E(c, 2, 'add', { d: 'b' }); E(c, 3, 'proposer_slot', { slot: 'first' });
+  assert.deepEqual(derive(c).lists.mod, ['a', 'b']);
+  const d = mk();
+  E(d, 0, 'floor', { key: 'mod', params: { total: 5, per: 30 }, by: 'a' }); E(d, 1, 'vote', { result: 'passed' }); E(d, 2, 'proposer_slot', { slot: 'none' });
+  assert.deepEqual(derive(d).lists.mod, []);
+});

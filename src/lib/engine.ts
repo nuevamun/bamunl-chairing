@@ -39,12 +39,12 @@ export const TRASH_DAYS = 30;
 export type Conference = { id: string; name: string; /** the club (school) that owns it; subadmins see only their own club's, the master sees all */ schoolId?: string; deletedAt?: number };
 
 export type Attendance = 'present' | 'pv' | 'absent';
-export type Mode = { kind: 'gsl' } | { kind: 'mod'; total: number; per: number; startedAt: number; label: string } | { kind: 'unmod'; total: number; startedAt: number; label: string };
+export type Mode = { kind: 'gsl' } | { kind: 'mod'; total: number; per: number; /** null until the caucus clock starts: with the first speaker, or when the chair starts it */ startedAt: number | null; label: string; /** who proposed it, and whether they chose to speak first or last ('' = not chosen yet) */ proposer: string; slot: '' | 'first' | 'last' | 'none'; /** when they chose last, they stay at the end of the list */ lastD: string } | { kind: 'unmod'; total: number; startedAt: number; label: string };
 export type Speech = {
   id: string; d: string; allotted: number; used: number; left: number; over: number;
   end: 'done' | 'chair' | 'delegate' | 'questions'; to?: string; mode: 'gsl' | 'mod'; t: number;
 };
-export type Floor = { id: string; key: string; label: string; params: Record<string, number>; note: string; by: string };
+export type Floor = { id: string; key: string; label: string; params: Record<string, number>; note: string; by: string; /** changed after it was proposed */ amended?: boolean };
 export type MotionRecord = Floor & { yes: number; no: number; abstain: number; result: 'passed' | 'failed' | 'withdrawn'; t: number };
 export type Note = { id: string; d: string; text: string; tag: string; t: number };
 export type Score = { d: string; cat: string; v: number };
@@ -86,6 +86,12 @@ export function derive(c: Committee): State {
     speaking: null, proposed: [], speeches: [], motions: [], notes: [], scores: [], listed: {}, eventCount: 0,
   };
   const key = (): 'gsl' | 'mod' => (s.mode.kind === 'mod' ? 'mod' : 'gsl');
+  /** Keeps a proposer who chose "last" at the end of the moderated list, however others are added or moved. */
+  const settle = () => {
+    if (s.mode.kind !== 'mod' || !s.mode.lastD) return;
+    const i = s.lists.mod.indexOf(s.mode.lastD);
+    if (i >= 0) { s.lists.mod.splice(i, 1); s.lists.mod.push(s.mode.lastD); }
+  };
   const finish = (e: Ev, how: Speech['end'], to?: string) => {
     const sp = s.speaking;
     if (!sp) return;
@@ -105,12 +111,17 @@ export function derive(c: Committee): State {
       case 'add': {
         const k = key();
         if (!s.closed && !s.lists[k].includes(e.d)) { s.lists[k].push(e.d); s.listed[e.d] = (s.listed[e.d] ?? 0) + 1; }
+        settle();
         break;
       }
-      case 'drop': s.lists.gsl = s.lists.gsl.filter((x) => x !== e.d); s.lists.mod = s.lists.mod.filter((x) => x !== e.d); break;
+      case 'drop':
+        s.lists.gsl = s.lists.gsl.filter((x) => x !== e.d); s.lists.mod = s.lists.mod.filter((x) => x !== e.d);
+        if (s.mode.kind === 'mod' && s.mode.lastD === e.d) s.mode.lastD = '';
+        break;
       case 'move': {
         const k = key(); const a = s.lists[k]; const i = a.indexOf(e.d); const j = i + e.by;
         if (i >= 0 && j >= 0 && j < a.length) { [a[i], a[j]] = [a[j], a[i]]; }
+        settle();
         break;
       }
       case 'start': {
@@ -119,6 +130,7 @@ export function derive(c: Committee): State {
         s.lists[k] = s.lists[k].filter((x) => x !== e.d);
         const allotted = e.allotted ?? (s.mode.kind === 'mod' ? s.mode.per : s.speakTime);
         s.speaking = { d: e.d, allotted, acc: 0, since: e.t, mode: k, start: e.t };
+        if (s.mode.kind === 'mod' && s.mode.startedAt == null) s.mode.startedAt = e.t;   // the caucus clock starts with its first speaker
         break;
       }
       case 'pause': if (s.speaking?.since != null) { s.speaking.acc += e.t - s.speaking.since; s.speaking.since = null; } break;
@@ -129,6 +141,16 @@ export function derive(c: Committee): State {
         s.proposed.push({ id: e.id, key: e.key, label: (e.name && String(e.name).trim()) || type?.label || e.key, params: e.params ?? {}, note: e.note ?? '', by: e.by ?? '' });
         const rank = (m: Floor) => { const i = c.config.motions.findIndex((x) => x.key === m.key); return i < 0 ? 999 : i; };
         s.proposed.sort((x, y) => rank(x) - rank(y));   // stable: same kind stays in the order proposed
+        break;
+      }
+      case 'amend': {
+        // Changing a motion's details also changes whose it is: the person who proposed the amendment now owns it.
+        const f = s.proposed.find((m) => m.id === e.target);
+        if (!f) break;
+        if (e.params) f.params = { ...e.params };
+        if (e.name && String(e.name).trim()) f.label = String(e.name).trim();
+        if (e.by) f.by = e.by;
+        f.amended = true;
         break;
       }
       case 'withdraw': {
@@ -149,10 +171,22 @@ export function derive(c: Committee): State {
         s.proposed = s.proposed.filter((m) => m !== f);
         if (!ok) break;
         const type = c.config.motions.find((m) => m.key === f.key);
-        if (type?.effect === 'mod') { s.mode = { kind: 'mod', total: (f.params.total ?? 0) * 60, per: f.params.per ?? 45, startedAt: e.t, label: f.label }; s.lists.mod = []; }
+        if (type?.effect === 'mod') { s.mode = { kind: 'mod', total: (f.params.total ?? 0) * 60, per: f.params.per ?? 45, startedAt: null, label: f.label, proposer: f.by, slot: f.by ? '' : 'none', lastD: '' }; s.lists.mod = []; }
         else if (type?.effect === 'unmod') s.mode = { kind: 'unmod', total: (f.params.total ?? 0) * 60, startedAt: e.t, label: f.label };
         else if (type?.effect === 'speaktime') s.speakTime = f.params.per ?? s.speakTime;
         else if (type?.effect === 'close') s.closed = true;
+        break;
+      }
+      case 'caucus_start': if (s.mode.kind === 'mod' && s.mode.startedAt == null) s.mode.startedAt = e.t; break;
+      case 'proposer_slot': {
+        // The proposer of a moderated caucus speaks first, speaks last, or neither.
+        if (s.mode.kind !== 'mod' || s.mode.slot || !s.mode.proposer) break;
+        const d = s.mode.proposer;
+        s.mode.slot = e.slot;
+        s.lists.mod = s.lists.mod.filter((x) => x !== d);
+        if (e.slot === 'first') s.lists.mod.unshift(d);
+        else if (e.slot === 'last') { s.lists.mod.push(d); s.mode.lastD = d; }
+        if (e.slot !== 'none') s.listed[d] = (s.listed[d] ?? 0) + 1;
         break;
       }
       case 'end_caucus': if (s.speaking?.mode === 'mod') finish(e, 'done'); s.mode = { kind: 'gsl' }; break;

@@ -11,6 +11,7 @@ const tools = document.getElementById('bar-tools')!;
 store.migrate();
 type Tab = 'floor' | 'roll' | 'delegates' | 'setup';
 let tab: Tab = 'floor';
+let amending: string | null = null;   // the proposed motion being amended, if any
 let menu = false;                     // the tab row stays out of sight on the Floor until the chair asks for it
 let picked: string | null = null;     // delegate open on the Delegates tab
 let c: Committee | undefined;
@@ -33,7 +34,8 @@ function speakerCard() {
   const list = mode.kind === 'mod' ? s.lists.mod : s.lists.gsl;
   const modeBar = h('div', { class: 'modebar' },
     h('strong', null, mode.kind === 'gsl' ? (s.closed ? 'Speakers list (closed)' : 'Speakers list') : mode.label),
-    mode.kind !== 'gsl' ? btn('End caucus', () => push('end_caucus')) : null, capEl);
+    mode.kind !== 'gsl' ? btn('End caucus', () => push('end_caucus')) : null,
+    mode.kind === 'mod' && mode.startedAt == null ? btn('Start clock', () => push('caucus_start')) : null, capEl);
 
   const note = h('input', { type: 'text', placeholder: 'Quick note on this speaker', 'aria-label': 'Quick note on this speaker', autocomplete: 'off' }) as HTMLInputElement;
   const body = sp
@@ -116,8 +118,14 @@ function listCard() {
   const wasAdding = refocusAdd; refocusAdd = false;
   const picker = combo(delegateOpts(list), (o) => { refocusAdd = true; push('add', { d: o.id }); }, 'Add a delegate to the list', 'Type a name to add…', wasAdding);
   const names = takeNames(key, list);
+  // A moderated caucus just passed: its proposer decides where they speak. Nothing starts until the chair does.
+  const ask = mode.kind === 'mod' && !mode.slot && mode.proposer
+    ? h('div', { class: 'ask' }, h('p', null, h('strong', null, nameOf(mode.proposer)), ' proposed this. Speak:'),
+        h('div', { class: 'btn-row' }, btn('First', () => push('proposer_slot', { slot: 'first' }), 'btn btn--primary btn--sm'), btn('Last', () => push('proposer_slot', { slot: 'last' }), 'btn btn--primary btn--sm'), btn('Neither', () => push('proposer_slot', { slot: 'none' }))))
+    : null;
   return h('section', { class: 'card' },
     h('div', { class: 'card-head' }, h('h2', null, mode.kind === 'mod' ? 'moderated list' : 'speakers list'), h('span', { class: 'muted' }, `${s.speakTime}s each`)),
+    ask,
     s.closed && key === 'gsl' ? h('p', { class: 'flash' }, 'List is closed.') : picker,
     s.closed && key === 'gsl' ? null : names,
     h('ol', { class: 'queue-list' }, ...list.map((d, i) => h('li', null,
@@ -136,6 +144,30 @@ const paramText = (m: { key: string; params: Record<string, number> }) => {
     return `${f?.label ?? k} ${v}${f?.unit ? ' ' + f.unit : ''}`;
   }).join(' · ');
 };
+
+/** Edit a proposed motion. Whoever proposes the amendment becomes its owner. */
+function amendForm(m: { id: string; key: string; label: string; params: Record<string, number>; by: string }) {
+  const type = c!.config.motions.find((x) => x.key === m.key);
+  const fs = m.key === 'other' && !type?.fields.length ? [{ key: 'time', label: 'Time', unit: 'min' as const, def: 0 }] : (type?.fields ?? []);
+  const fields = h('div', { class: 'fields fields--3' }, ...fs.map((f) => num(f.key, m.params[f.key] ?? f.def, `${f.label}${f.unit ? ' (' + f.unit + ')' : ''}`)));
+  const name = h('input', { type: 'text', value: m.label, autocomplete: 'off', 'aria-label': 'Motion name' }) as HTMLInputElement;
+  let by = '';
+  const owner = combo(delegateOpts().map((o) => ({ ...o, off: false })), (o) => { by = o.id; owner.input.value = o.name; }, 'New owner', 'Type a name…');
+  owner.input.addEventListener('input', () => { by = ''; });
+  return h('li', { class: 'proposal proposal--amend' },
+    h('div', { class: 'proposal-top' }, h('strong', null, 'Amend'), h('span', { class: 'muted' }, m.label)),
+    h('form', { class: 'form', onsubmit: (e: Event) => {
+      e.preventDefault();
+      const params: Record<string, number> = {};
+      fields.querySelectorAll('input').forEach((i) => { params[(i as HTMLInputElement).name] = +(i as HTMLInputElement).value || 0; });
+      amending = null;
+      push('amend', { target: m.id, params, by, ...(m.key === 'other' ? { name: name.value.trim() } : {}) });
+    } },
+      m.key === 'other' ? h('label', { class: 'field field--tight' }, h('span', null, 'Name'), name) : null,
+      fields,
+      h('div', { class: 'field field--tight' }, h('span', null, `Owner (now ${m.by ? nameOf(m.by) : 'no one'})`), owner),
+      h('div', { class: 'btn-row' }, h('button', { class: 'btn btn--primary btn--sm' }, 'Save amendment'), btn('Cancel', () => { amending = null; render(); }))));
+}
 
 function motionCard() {
   // Propose: a motion goes into the pool. Nothing has to be voted on straight away.
@@ -168,14 +200,15 @@ function motionCard() {
 
   // The pool: pick which to take up, and say whether it passed or failed.
   const pool = s.proposed.map((m, i) => {
+    if (amending === m.id) return amendForm(m);
     const yes = h('input', { type: 'number', min: 0, inputmode: 'numeric', placeholder: 'For', 'aria-label': 'For' }) as HTMLInputElement;
     const no = h('input', { type: 'number', min: 0, inputmode: 'numeric', placeholder: 'Against', 'aria-label': 'Against' }) as HTMLInputElement;
     const ab = h('input', { type: 'number', min: 0, inputmode: 'numeric', placeholder: 'Abstain', 'aria-label': 'Abstain' }) as HTMLInputElement;
     const decide = (result: 'passed' | 'failed') => push('vote', { target: m.id, result, yes: +yes.value || 0, no: +no.value || 0, abstain: +ab.value || 0 });
     return h('li', { class: 'proposal' },
-      h('div', { class: 'proposal-top' }, h('strong', null, m.label), h('span', { class: 'muted' }, [paramText(m), m.by ? `by ${nameOf(m.by)}` : '', i === 0 && s.proposed.length > 1 ? 'first in order' : ''].filter(Boolean).join(' · '))),
+      h('div', { class: 'proposal-top' }, h('strong', null, m.label), h('span', { class: 'muted' }, [paramText(m), m.by ? `by ${nameOf(m.by)}` : '', m.amended ? 'amended' : '', i === 0 && s.proposed.length > 1 ? 'first in order' : ''].filter(Boolean).join(' · '))),
       h('div', { class: 'proposal-votes' }, yes, no, ab),
-      h('div', { class: 'btn-row' }, btn('Passed', () => decide('passed'), 'btn btn--primary btn--sm'), btn('Failed', () => decide('failed')), btn('Withdraw', () => push('withdraw', { target: m.id }))));
+      h('div', { class: 'btn-row' }, btn('Passed', () => decide('passed'), 'btn btn--primary btn--sm'), btn('Failed', () => decide('failed')), btn('Amend', () => { amending = m.id; render(); }), btn('Withdraw', () => push('withdraw', { target: m.id }))));
   });
   return h('section', { class: 'card' }, h('h2', null, 'motions'), form,
     pool.length ? h('div', { class: 'pool' }, h('div', { class: 'card-head' }, h('h3', null, 'proposed'), s.proposed.length > 1 ? btn('Clear all', () => push('clear_proposed'), 'btn btn--ghost btn--xs') : null), h('ul', { class: 'proposals' }, ...pool),
@@ -194,7 +227,7 @@ function history() {
 }
 
 function floorTab() {
-  return h('div', { class: 'grid-floor' }, speakerCard(), motionCard(), listCard());
+  return h('div', { class: 'grid-floor' }, motionCard(), h('div', { class: 'floor-side' }, speakerCard(), listCard()));
 }
 
 function rollTab() {
@@ -333,7 +366,7 @@ function tick() {
     clockEl.classList.toggle('out', left <= 0);
     if (barEl) barEl.style.width = `${Math.max(0, Math.min(100, (left / s.speaking.allotted) * 100))}%`;
   } else clockEl.textContent = '';
-  if (capEl && (s.mode.kind === 'mod' || s.mode.kind === 'unmod')) capEl.textContent = `${clock(s.mode.total - (now - s.mode.startedAt) / 1000)} left in caucus`;
+  if (capEl && (s.mode.kind === 'mod' || s.mode.kind === 'unmod')) capEl.textContent = s.mode.startedAt == null ? `${clock(s.mode.total)} · starts with the first speaker` : `${clock(s.mode.total - (now - s.mode.startedAt) / 1000)} left in caucus`;
 }
 
 addEventListener('keydown', (e) => {
@@ -347,7 +380,7 @@ addEventListener('keydown', (e) => {
 function relock() {
   if (dlg?.open) dlg.close();
   if (!menu && tab === 'floor') return;
-  menu = false; picked = null; tab = 'floor'; render();
+  menu = false; picked = null; amending = null; tab = 'floor'; render();
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden) relock(); });
 addEventListener('blur', relock);
