@@ -256,3 +256,20 @@ export function newCommittee(name: string, conference = '', conferenceId?: strin
   return { id: uid(), name, conference, conferenceId, config: structuredClone(DEFAULT_CONFIG), delegates: [], events: [] };
 }
 export const ev = (type: string, rest: Record<string, any> = {}): Ev => ({ id: uid(), t: Date.now(), type, ...rest });
+
+/**
+ * Turns pasted text into delegate names. Handles every kind of line break (Windows, old Mac, Word and Google Docs'
+ * soft breaks), tab- or semicolon-separated rows from a spreadsheet, and list markers like "1." "-" "•".
+ * Commas are left alone, since names like "Korea, Republic of" contain them. Duplicates are dropped.
+ */
+export function parseNames(text: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of text.split(/[\r\n\u000b\u000c\u0085\u2028\u2029]+|\t+|;+/)) {
+    const name = raw.replace(/^\s*(?:[-*•·▪‣–—]+|\d+[.)])\s+/, '').replace(/\s+/g, ' ').trim();
+    if (!name || seen.has(name.toLowerCase())) continue;
+    seen.add(name.toLowerCase());
+    out.push(name.slice(0, 120));
+  }
+  return out;
+}

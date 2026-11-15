@@ -1,6 +1,6 @@
 // The chair console: the back of the room. Everything here writes events; nothing mutates state directly.
 import { store } from '../lib/store';
-import { derive, statsFor, motionTypes, elapsed, clock, ev, uid, effective, AWARD_CATEGORIES, NOTE_TAGS, type Committee, type State, type Attendance } from '../lib/engine';
+import { derive, statsFor, motionTypes, parseNames, elapsed, clock, ev, uid, effective, AWARD_CATEGORIES, NOTE_TAGS, type Committee, type State, type Attendance } from '../lib/engine';
 import { h, $, mount } from '../lib/ui';
 import { askConfirm } from '../lib/confirm';
 import { askDelete } from '../lib/guard';
@@ -287,7 +287,7 @@ function setupTab() {
   const st = h('input', { type: 'number', value: c!.config.speakTime, min: 5, inputmode: 'numeric' }) as HTMLInputElement;
   const maj = h('select', null, h('option', { value: 'simple' }, 'Simple majority'), h('option', { value: 'twothirds' }, 'Two-thirds')) as HTMLSelectElement;
   maj.value = c!.config.majority;
-  const bulk = h('textarea', { rows: 6, placeholder: 'One delegate per line' }) as HTMLTextAreaElement;
+  const bulk = h('textarea', { rows: 6, placeholder: 'Paste a list: one delegate per line' }) as HTMLTextAreaElement;
   return h('div', { class: 'stack' },
     h('form', { class: 'card form', onsubmit: (e: Event) => { e.preventDefault(); const n = store.get(id)!; n.name = name.value.trim() || n.name; n.config.speakTime = +st.value || 60; n.config.majority = maj.value as any; store.put(n); render(); } },
       h('h2', null, 'committee'),
@@ -295,7 +295,7 @@ function setupTab() {
       h('div', { class: 'form-actions' }, h('button', { class: 'btn btn--primary' }, 'Save'))),
     h('form', { class: 'card form', onsubmit: (e: Event) => {
       e.preventDefault(); const n = store.get(id)!;
-      for (const line of bulk.value.split('\n').map((x) => x.trim()).filter(Boolean)) if (!n.delegates.some((d) => d.name === line)) n.delegates.push({ id: uid(), name: line });
+      for (const line of parseNames(bulk.value)) if (!n.delegates.some((d) => d.name.toLowerCase() === line.toLowerCase())) n.delegates.push({ id: uid(), name: line });
       store.put(n); render();
     } }, h('h2', null, 'delegates'), bulk, h('div', { class: 'form-actions' }, h('button', { class: 'btn btn--primary' }, 'Add'))),
     h('section', { class: 'card' }, h('h2', null, 'delegates'), h('div', { class: 'rows' }, ...c!.delegates.map((d) => h('div', { class: 'r' }, h('span', null, d.name),

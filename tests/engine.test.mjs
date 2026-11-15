@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { derive, statsFor, newCommittee, passes, motionTypes } from '../src/lib/engine.ts';
+import { derive, statsFor, newCommittee, passes, motionTypes, parseNames } from '../src/lib/engine.ts';
 
 const mk = () => { const c = newCommittee('UNSC'); c.delegates = [{ id: 'a', name: 'France' }, { id: 'b', name: 'Peru' }]; return c; };
 let n = 0;
@@ -105,4 +105,15 @@ test('motion types run most to least disruptive, "other" last, and old committee
   const keys = motionTypes(old).map((m) => m.key);
   assert.deepEqual(keys, ['suspend', 'adjourn', 'unmod', 'mod', 'speaktime', 'close', 'custom', 'other']);
   assert.equal(motionTypes(old).find((m) => m.key === 'close').label, 'Close the speakers list');   // their own version wins
+});
+
+test('pasted lists become delegate names whatever the line breaks', () => {
+  assert.deepEqual(parseNames('France\nPeru\nGhana'), ['France', 'Peru', 'Ghana']);
+  assert.deepEqual(parseNames('France\r\nPeru\r\nGhana\r\n'), ['France', 'Peru', 'Ghana']);   // Windows
+  assert.deepEqual(parseNames('France\rPeru\rGhana'), ['France', 'Peru', 'Ghana']);             // old Mac
+  assert.deepEqual(parseNames('France\u2028Peru\u000bGhana'), ['France', 'Peru', 'Ghana']);       // Docs / Word soft breaks
+  assert.deepEqual(parseNames('France\tPeru\tGhana'), ['France', 'Peru', 'Ghana']);               // a spreadsheet row
+  assert.deepEqual(parseNames('1. France\n2) Peru\n- Ghana\n• Chad'), ['France', 'Peru', 'Ghana', 'Chad']);
+  assert.deepEqual(parseNames('Korea, Republic of\nkorea, republic of\n  Cote   d\'Ivoire '), ['Korea, Republic of', "Cote d'Ivoire"]);
+  assert.deepEqual(parseNames('  \n\n '), []);
 });
