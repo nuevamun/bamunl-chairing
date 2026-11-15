@@ -366,3 +366,4 @@ p.reminder { margin: 0; }
 .field-err { margin: .25rem 0 0; font-size: .875rem; font-weight: 700; color: #9b1c1c; }
 .field-err::before { content: '!'; display: inline-grid; place-items: center; width: 1.1rem; height: 1.1rem; margin-right: .4rem; border-radius: 50%; background: #9b1c1c; color: #fff; font-size: .75rem; line-height: 1; }
 [aria-invalid="true"] { border-color: #9b1c1c !important; }
+.spoke { font-weight: 400; white-space: nowrap; }

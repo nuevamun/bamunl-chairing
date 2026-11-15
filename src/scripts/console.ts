@@ -18,6 +18,9 @@ let c: Committee | undefined;
 let s: State;
 
 const push = (type: string, rest: Record<string, any> = {}) => { store.append(id, ev(type, rest)); render(); };
+/** Speeches this delegation has finished so far this session, in any list or caucus. */
+const spokeCount = (d: string) => s.speeches.filter((x) => x.d === d).length;
+const spokeText = (d: string) => { const n = spokeCount(d); return n ? `spoke ${n}×` : ''; };
 const nameOf = (d: string) => c!.delegates.find((x) => x.id === d)?.name ?? '?';
 const here = (d: string) => (s.attendance[d] ?? 'absent') !== 'absent';
 const btn = (label: string, fn: () => void, cls = 'btn btn--ghost btn--sm', extra: Record<string, any> = {}) => h('button', { type: 'button', class: cls, onclick: fn, ...extra }, label);
@@ -39,7 +42,7 @@ function speakerCard() {
 
   const note = h('input', { type: 'text', placeholder: 'Quick note on this speaker', 'aria-label': 'Quick note on this speaker', autocomplete: 'off' }) as HTMLInputElement;
   const body = sp
-    ? [h('div', { class: 'speaker-name' }, nameOf(sp.d)), clockEl, h('div', { class: 'meter' }, barEl),
+    ? [h('div', { class: 'speaker-name' }, nameOf(sp.d)), spokeText(sp.d) ? h('div', { class: 'muted' }, `Already ${spokeText(sp.d)}`) : null, clockEl, h('div', { class: 'meter' }, barEl),
        h('div', { class: 'btn-row' },
          sp.since != null ? btn('Pause', () => push('pause')) : btn('Resume', () => push('resume'), 'btn btn--primary btn--sm'),
          btn('Stop', () => push('stop', { how: 'done' }), 'btn btn--primary btn--sm'),
@@ -96,7 +99,8 @@ function combo(all: Opt[], onPick: (o: Opt) => void, label: string, placeholder:
 const delegateOpts = (list: string[] = [], limited = false): Opt[] => c!.delegates.map((d) => {
   const queued = list.includes(d.id), speaking = s.speaking?.d === d.id, absent = !here(d.id);
   const full = limited && !queued && !speaking;     // the caucus has all the speakers it has time for
-  return { id: d.id, name: d.name, off: queued || speaking || full, note: queued ? 'on the list' : speaking ? 'speaking' : full ? 'full' : absent ? 'absent' : '' };
+  const state = queued ? 'on the list' : speaking ? 'speaking' : full ? 'full' : absent ? 'absent' : '';
+  return { id: d.id, name: d.name, off: queued || speaking || full, note: [state, spokeText(d.id)].filter(Boolean).join(' · ') };
 });
 
 /** Tap a delegate to put them on the list, tap again to take them off. Numbers show the order they will be called. */
@@ -104,11 +108,11 @@ function takeNames(key: 'gsl' | 'mod', list: string[], full = false) {
   if (!c!.delegates.length) return null;
   const chips = c!.delegates.map((d) => {
     const at = list.indexOf(d.id);
-    const spoke = s.speeches.filter((x) => x.d === d.id && x.mode === key).length;
+    const spoke = spokeCount(d.id);
     const speaking = s.speaking?.d === d.id;
     return h('button', { type: 'button', class: 'chip-btn' + (at >= 0 ? ' chip-btn--on' : '') + (!here(d.id) ? ' chip-btn--away' : ''), 'aria-pressed': String(at >= 0), disabled: speaking || (full && at < 0) ? true : null,
       onclick: () => push(at >= 0 ? 'drop' : 'add', { d: d.id }) },
-      at >= 0 ? h('b', { class: 'chip-n' }, String(at + 1)) : null, d.name, spoke ? h('small', null, `×${spoke}`) : null);
+      at >= 0 ? h('b', { class: 'chip-n' }, String(at + 1)) : null, d.name, spoke ? h('small', { title: `Has spoken ${spoke} time${spoke === 1 ? '' : 's'}` }, `spoke ${spoke}×`) : null);
   });
   return h('details', { class: 'names', open: key === 'mod' }, h('summary', null, 'Take names'), h('div', { class: 'chip-grid' }, ...chips));
 }
@@ -133,7 +137,7 @@ function listCard() {
     key === 'gsl' && !s.gslOpen ? h('p', { class: 'empty' }, 'No speakers list is open. A motion to open the speakers list opens it.') : picker,
     key === 'gsl' && !s.gslOpen ? null : names,
     h('ol', { class: 'queue-list' }, ...list.map((d, i) => h('li', null,
-      h('span', { class: 'qn' }, nameOf(d)),
+      h('span', { class: 'qn' }, nameOf(d), spokeText(d) ? h('small', { class: 'muted spoke' }, ' ' + spokeText(d)) : null),
       btn('Start', () => push('start', { d }), 'btn btn--primary btn--xs'),
       btn('↑', () => push('move', { d, by: -1 }), 'btn btn--ghost btn--xs', { 'aria-label': `Move ${nameOf(d)} up`, disabled: i === 0 ? true : null }),
       btn('↓', () => push('move', { d, by: 1 }), 'btn btn--ghost btn--xs', { 'aria-label': `Move ${nameOf(d)} down`, disabled: i === list.length - 1 ? true : null }),
