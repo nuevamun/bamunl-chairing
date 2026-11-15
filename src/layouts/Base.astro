@@ -33,6 +33,7 @@ const { title, bare = false } = Astro.props;
     <slot />
     <script>import "../scripts/nowheel";</script>
     <script>import "../scripts/validity";</script>
+    <script>import "../scripts/update";</script>
     {!bare && <script>import "../scripts/syncbar";</script>}
   </body>
 </html>

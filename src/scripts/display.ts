@@ -1,6 +1,6 @@
 // The forward-facing screen: what delegates see. Never shows notes, scores or any per-delegate feedback.
 import { store } from '../lib/store';
-import { derive, elapsed, clock, allTypes, majorityFor, type Committee } from '../lib/engine';
+import { derive, elapsed, clock, allTypes, majorityFor, modCapacity, type Committee } from '../lib/engine';
 import { h, mount } from '../lib/ui';
 
 const id = location.pathname.split('/')[2];
@@ -17,7 +17,8 @@ function render() {
   const name = (d: string) => c!.delegates.find((x) => x.id === d)?.name ?? '';
   // Top right says what the room is doing. Before any list or caucus is open it says nothing.
   const doing = s.mode.kind === 'gsl' ? (s.gslOpen ? 'Speakers list' : '')
-    : s.mode.kind === 'mod' && s.mode.topic ? `${s.mode.label}: ${s.mode.topic}` : s.mode.label;
+    : s.mode.kind === 'mod' ? `${s.mode.topic ? `${s.mode.label}: ${s.mode.topic}` : s.mode.label}${modCapacity(s.mode) === Infinity ? '' : ` · ${s.mode.spoke} of ${modCapacity(s.mode)}`}`
+    : s.mode.label;
   const kids: Array<HTMLElement | null> = [h('div', { class: 'd-head' }, h('span', null, c.name), h('span', { class: 'mode' }, doing))];
   if (s.proposed.length) {
     const text = (m: typeof s.proposed[number]) => Object.entries(m.params).filter(([, v]) => v > 0 || m.key !== 'other').map(([k, v]) => {

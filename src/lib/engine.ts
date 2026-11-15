@@ -18,6 +18,8 @@ export type MotionType = {
 };
 export const hasTopic = (m: Pick<MotionType, 'effect' | 'topic'> | undefined) => m?.topic ?? m?.effect === 'mod';
 export type Config = {
+  /** How much each criterion counts when recommending an award. Relative, so they needn't add to 100. */
+  weights?: Record<string, number>;
   /** Seconds each speaker gets on the general speakers list. */
   speakTime: number;
   majority: 'simple' | 'twothirds';
@@ -150,7 +152,12 @@ export function derive(c: Committee): State {
       id: e.id, d: sp.d, allotted: sp.allotted, used, left: Math.max(0, sp.allotted - used), over: Math.max(0, used - sp.allotted),
       end: how, to, mode: sp.mode, t: sp.start,
     });
-    if (s.mode.kind === 'mod' && sp.mode === 'mod') s.mode.spoke++;
+    // A caucus ends when its speeches are done, never when the clock runs out: a 10 minute caucus can take 15
+    // with walking to the front and changing speakers. The last speech to finish closes it.
+    if (s.mode.kind === 'mod' && sp.mode === 'mod') {
+      s.mode.spoke++;
+      if (s.mode.rr ? s.lists.mod.length === 0 : s.mode.spoke >= modCapacity(s.mode)) s.mode = { kind: 'gsl' };
+    }
     s.speaking = null;
   };
 
@@ -341,4 +348,64 @@ export function checkMod(totalMin: number, perSec: number): string {
   const t = near(totals, totalMin, 2), p = near(pers, per, 3);
   const bits = [t.length ? `a total of ${t.join(' or ')} min` : '', p.length ? `${p.join(', ')} s per speaker` : ''].filter(Boolean);
   return `${totalMin} min doesn’t divide into ${per} s speeches (${(total / per).toFixed(1)} speakers).${bits.length ? ` Try ${bits.join(', or ')}.` : ''}`;
+}
+
+// ---------- awards: weighted evaluation ----------
+
+export type Criterion = { key: string; label: string; kind: 'score' | 'metric'; hint: string };
+/** What an award recommendation weighs. "score" ones are the chair's 1-5 marks; "metric" ones come from the session itself. */
+export const CRITERIA: Criterion[] = [
+  { key: 'substance', label: 'Substance', kind: 'score', hint: 'Chair’s 1–5 score' },
+  { key: 'diplomacy', label: 'Diplomacy', kind: 'score', hint: 'Chair’s 1–5 score' },
+  { key: 'collaboration', label: 'Collaboration', kind: 'score', hint: 'Chair’s 1–5 score' },
+  { key: 'speaking', label: 'Speaking', kind: 'score', hint: 'Chair’s 1–5 score' },
+  { key: 'procedure', label: 'Procedure', kind: 'score', hint: 'Chair’s 1–5 score' },
+  { key: 'participation', label: 'Speeches', kind: 'metric', hint: 'Speeches given, against the most in the room' },
+  { key: 'timeuse', label: 'Time used', kind: 'metric', hint: 'Share of their allotted speaking time they used' },
+  { key: 'motions', label: 'Motions passed', kind: 'metric', hint: 'Motions they proposed that passed, against the most in the room' },
+];
+export const WEIGHT_PRESETS: Record<string, { label: string; weights: Record<string, number> }> = {
+  balanced: { label: 'Balanced', weights: { substance: 25, diplomacy: 15, collaboration: 15, speaking: 15, procedure: 10, participation: 10, timeuse: 5, motions: 5 } },
+  substance: { label: 'Substance first', weights: { substance: 40, diplomacy: 15, collaboration: 15, speaking: 10, procedure: 5, participation: 10, timeuse: 5, motions: 0 } },
+  procedure: { label: 'Procedure and participation', weights: { substance: 15, diplomacy: 5, collaboration: 10, speaking: 10, procedure: 25, participation: 20, timeuse: 5, motions: 10 } },
+};
+export const DEFAULT_WEIGHTS = WEIGHT_PRESETS.balanced.weights;
+
+export type Part = { key: string; label: string; weight: number; /** 0 to 1, or null if the chair hasn't scored it */ norm: number | null; shown: string };
+export type Evaluation = { d: string; total: number; parts: Part[]; scored: number };
+
+/** Each delegate's weighted score out of 100. An unscored criterion counts as zero, so a delegate nobody scored can't win by default. */
+export function evaluate(c: Committee, s: State, weights: Record<string, number> = DEFAULT_WEIGHTS): Evaluation[] {
+  const stats = statsFor(c, s);
+  const most = (f: (d: string) => number) => Math.max(0, ...c.delegates.map((d) => f(d.id)));
+  const passedBy = (d: string) => s.motions.filter((m) => m.by === d && m.result === 'passed').length;
+  const maxSpeeches = most((d) => stats.find((x) => x.d === d)?.speeches ?? 0), maxPassed = most(passedBy);
+  const w = (k: string) => Math.max(0, Number(weights[k] ?? 0) || 0);
+  const sumW = CRITERIA.reduce((a, k) => a + w(k.key), 0);
+  return c.delegates.map((dl) => {
+    const st = stats.find((x) => x.d === dl.id)!;
+    const parts: Part[] = CRITERIA.map((k) => {
+      let norm: number | null = null, shown = '—';
+      if (k.kind === 'score') {
+        const v = s.scores.find((x) => x.d === dl.id && x.cat.toLowerCase() === k.key)?.v ?? 0;
+        if (v > 0) { norm = v / 5; shown = `${v}/5`; }
+      } else if (k.key === 'participation') { norm = maxSpeeches ? st.speeches / maxSpeeches : 0; shown = String(st.speeches); }
+      else if (k.key === 'timeuse') { norm = st.avgUsedPct == null ? 0 : st.avgUsedPct / 100; shown = st.avgUsedPct == null ? '—' : `${st.avgUsedPct}%`; }
+      else if (k.key === 'motions') { const n = passedBy(dl.id); norm = maxPassed ? n / maxPassed : 0; shown = String(n); }
+      return { key: k.key, label: k.label, weight: w(k.key), norm, shown };
+    });
+    const total = sumW ? (parts.reduce((a, p) => a + p.weight * (p.norm ?? 0), 0) / sumW) * 100 : 0;
+    return { d: dl.id, total, parts, scored: parts.filter((p) => p.norm !== null && CRITERIA.find((k) => k.key === p.key)!.kind === 'score').length };
+  }).sort((a, b) => b.total - a.total);
+}
+
+export type Recommendation = { enough: boolean; winner?: Evaluation; runnerUp?: Evaluation; close: boolean; tied: Evaluation[]; reasons: string[] };
+/** The one to recommend, and why. Says "not enough" until there is something to judge on. */
+export function recommend(rows: Evaluation[], s: State): Recommendation {
+  const evidence = s.scores.some((x) => x.v > 0) || s.speeches.length > 0;
+  if (!rows.length || !evidence || rows[0].total <= 0) return { enough: false, close: false, tied: [], reasons: [] };
+  const [winner, runnerUp] = rows;
+  const tied = rows.filter((r) => Math.abs(r.total - winner.total) < 0.05);
+  const reasons = [...winner.parts].filter((p) => p.weight > 0 && p.norm).sort((a, b) => b.weight * (b.norm ?? 0) - a.weight * (a.norm ?? 0)).slice(0, 2).map((p) => p.label);
+  return { enough: true, winner, runnerUp, close: !!runnerUp && winner.total - runnerUp.total < 2, tied, reasons };
 }

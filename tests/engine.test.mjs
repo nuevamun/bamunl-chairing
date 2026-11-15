@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { derive, statsFor, newCommittee, passes, motionTypes, parseNames, checkMod, DEFAULT_CONFIG, modCapacity, modFull } from '../src/lib/engine.ts';
+import { derive, statsFor, newCommittee, passes, motionTypes, parseNames, checkMod, DEFAULT_CONFIG, modCapacity, modFull, evaluate, recommend, WEIGHT_PRESETS } from '../src/lib/engine.ts';
 
 const mk = () => { const c = newCommittee('UNSC'); c.needsOpen = false;   // these tests start with a list already open, like committees made before lists had to be opened
   c.delegates = [{ id: 'a', name: 'France' }, { id: 'b', name: 'Peru' }]; return c; };
@@ -220,4 +220,84 @@ test('a round robin and the general list have no such limit', () => {
   const c = mk(); c.delegates = Array.from({ length: 5 }, (_, i) => ({ id: 'd' + i, name: 'D' + i }));
   E(c, 0, 'floor', { key: 'roundrobin', params: { per: 30 } }); E(c, 1, 'vote', { result: 'passed' });
   assert.equal(modCapacity(derive(c).mode), Infinity); assert.equal(derive(c).lists.mod.length, 5);
+});
+
+function room() {
+  const c = mk(); c.delegates.push({ id: 'z', name: 'Chad' });
+  // France: strong on substance. Peru: strong on procedure. Chad: nothing scored.
+  E(c, 0, 'score', { d: 'a', cat: 'Substance', v: 5 }); E(c, 1, 'score', { d: 'a', cat: 'Procedure', v: 2 });
+  E(c, 2, 'score', { d: 'b', cat: 'Substance', v: 2 }); E(c, 3, 'score', { d: 'b', cat: 'Procedure', v: 5 });
+  return c;
+}
+test('weights decide who is recommended', () => {
+  const c = room();
+  const sub = evaluate(c, derive(c), { substance: 90, procedure: 10 });
+  assert.equal(recommend(sub, derive(c)).winner.d, 'a');
+  const proc = evaluate(c, derive(c), { substance: 10, procedure: 90 });
+  assert.equal(recommend(proc, derive(c)).winner.d, 'b');
+});
+test('totals are out of 100, ignore how big the weights are, and unscored counts as zero', () => {
+  const c = room(); const s = derive(c);
+  const a = evaluate(c, s, { substance: 1 }).find((r) => r.d === 'a'), b = evaluate(c, s, { substance: 500 }).find((r) => r.d === 'a');
+  assert.equal(a.total, 100); assert.equal(b.total, 100);                         // 5/5 on the only weighted criterion
+  assert.equal(evaluate(c, s, { substance: 1 }).find((r) => r.d === 'z').total, 0);  // Chad: nothing scored
+});
+test('no recommendation until there is something to judge on', () => {
+  const c = mk(); c.delegates.push({ id: 'z', name: 'Chad' });
+  assert.equal(recommend(evaluate(c, derive(c), WEIGHT_PRESETS.balanced.weights), derive(c)).enough, false);
+});
+test('session numbers count: speeches, time used, motions passed', () => {
+  const c = mk();
+  E(c, 0, 'start', { d: 'a' }); E(c, 60000, 'stop', { how: 'done' });            // France uses all 60 s
+  E(c, 61000, 'floor', { key: 'unmod', params: { total: 5 }, by: 'a' }); E(c, 62000, 'vote', { result: 'passed' });
+  const rows = evaluate(c, derive(c), { participation: 1, timeuse: 1, motions: 1 });
+  const a = rows.find((r) => r.d === 'a'), b = rows.find((r) => r.d === 'b');
+  assert.equal(a.total, 100); assert.equal(b.total, 0);
+  assert.equal(recommend(rows, derive(c)).winner.d, 'a');
+});
+test('a near tie is flagged as a close call', () => {
+  const c = mk();
+  E(c, 0, 'score', { d: 'a', cat: 'Substance', v: 5 }); E(c, 1, 'score', { d: 'b', cat: 'Substance', v: 5 });
+  const r = recommend(evaluate(c, derive(c), { substance: 1 }), derive(c));
+  assert.equal(r.close, true); assert.equal(r.tied.length, 2);
+});
+
+test('a caucus ends when its last speech is given, not when time runs out', () => {
+  const c = mk(); c.delegates = Array.from({ length: 4 }, (_, i) => ({ id: 'd' + i, name: 'D' + i }));
+  E(c, 0, 'floor', { key: 'mod', params: { total: 2, per: 60 } }); E(c, 1, 'vote', { result: 'passed' });   // 2 speeches
+  E(c, 2, 'add', { d: 'd0' }); E(c, 3, 'add', { d: 'd1' });
+  E(c, 4, 'start', { d: 'd0' }); E(c, 4 + 90_000, 'stop', { how: 'done' });                    // ran 90 s over, caucus's 2 minutes now spent
+  let s = derive(c);
+  assert.equal(s.mode.kind, 'mod'); assert.equal(s.mode.spoke, 1);                             // still going: one speech to go
+  E(c, 5, 'start', { d: 'd1' }); E(c, 5 + 20 * 60_000, 'stop', { how: 'done' });                // twenty minutes later, the last speech ends it
+  s = derive(c);
+  assert.equal(s.mode.kind, 'gsl'); assert.equal(s.speeches.length, 2);
+});
+test('a round robin ends once everyone on it has spoken', () => {
+  const c = mk();
+  E(c, 0, 'floor', { key: 'roundrobin', params: { per: 30 } }); E(c, 1, 'vote', { result: 'passed' });
+  E(c, 2, 'start', { d: 'a' }); E(c, 3, 'stop', {});
+  assert.equal(derive(c).mode.kind, 'mod');
+  E(c, 4, 'start', { d: 'b' }); E(c, 5, 'stop', {});
+  assert.equal(derive(c).mode.kind, 'gsl');
+});
+
+test('a full caucus stays full as speakers finish, including when they yield to the chair', () => {
+  const c = mk(); c.delegates = Array.from({ length: 26 }, (_, i) => ({ id: 'd' + i, name: 'D' + i }));
+  E(c, 0, 'floor', { key: 'mod', params: { total: 12, per: 60 } }); E(c, 1, 'vote', { result: 'passed' });   // 12 speakers
+  let t = 2;
+  for (let i = 0; i < 26; i++) E(c, t++, 'add', { d: 'd' + i });
+  assert.equal(derive(c).lists.mod.length, 12);
+  for (let i = 0; i < 6; i++) {
+    E(c, t++, 'start', { d: 'd' + i });
+    E(c, t++, 'stop', { how: i % 2 ? 'chair' : 'done' });                // some yield to the chair, some run out
+  }
+  let s = derive(c);
+  assert.equal(s.mode.spoke, 6); assert.equal(s.lists.mod.length, 6);
+  for (let i = 12; i < 26; i++) E(c, t++, 'add', { d: 'd' + i });          // the room is still full: 6 spoke + 6 waiting
+  assert.equal(derive(c).lists.mod.length, 6);
+  assert.equal(modFull(derive(c)), true);
+  E(c, t++, 'drop', { d: 'd6' });                                           // taking one off frees exactly one place
+  E(c, t++, 'add', { d: 'd12' }); E(c, t++, 'add', { d: 'd13' });
+  assert.equal(derive(c).lists.mod.length, 6);
 });

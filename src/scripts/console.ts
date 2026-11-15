@@ -1,6 +1,6 @@
 // The chair console: the back of the room. Everything here writes events; nothing mutates state directly.
 import { store } from '../lib/store';
-import { derive, statsFor, modCapacity, modTaken, modFull, motionTypes, allTypes, majorityFor, parseNames, hasTopic, checkMod, elapsed, clock, ev, uid, effective, AWARD_CATEGORIES, NOTE_TAGS, type Committee, type State, type Attendance } from '../lib/engine';
+import { derive, statsFor, evaluate, recommend, CRITERIA, DEFAULT_WEIGHTS, WEIGHT_PRESETS, modCapacity, modTaken, modFull, motionTypes, allTypes, majorityFor, parseNames, hasTopic, checkMod, elapsed, clock, ev, uid, effective, AWARD_CATEGORIES, NOTE_TAGS, type Committee, type State, type Attendance } from '../lib/engine';
 import { h, $, mount } from '../lib/ui';
 import { askConfirm } from '../lib/confirm';
 import { askDelete } from '../lib/guard';
@@ -9,7 +9,7 @@ const id = location.pathname.split('/')[2];
 const app = document.getElementById('app')!;
 const tools = document.getElementById('bar-tools')!;
 store.migrate();
-type Tab = 'floor' | 'roll' | 'delegates' | 'setup';
+type Tab = 'floor' | 'roll' | 'delegates' | 'perf' | 'setup';
 let tab: Tab = 'floor';
 let amending: string | null = null;   // the proposed motion being amended, if any
 let menu = false;                     // the tab row stays out of sight on the Floor until the chair asks for it
@@ -38,7 +38,7 @@ function speakerCard() {
   const modeBar = h('div', { class: 'modebar' },
     h('strong', null, mode.kind === 'gsl' ? (s.gslOpen ? 'Speakers list' : 'No speakers list open') : mode.kind === 'mod' && mode.topic ? `${mode.label}: ${mode.topic}` : mode.label),
     mode.kind !== 'gsl' ? btn(mode.kind === 'voting' ? 'End voting bloc' : mode.kind === 'mod' && mode.rr ? 'End round robin' : 'End caucus', () => push('end_caucus')) : null,
-    mode.kind === 'mod' && !mode.rr && mode.startedAt == null ? btn('Start clock', () => push('caucus_start')) : null, capEl);
+    capEl);
 
   const note = h('input', { type: 'text', placeholder: 'Quick note on this speaker', 'aria-label': 'Quick note on this speaker', autocomplete: 'off' }) as HTMLInputElement;
   const body = sp
@@ -310,6 +310,48 @@ function detail(d: string) {
     mine.length ? h('ul', { class: 'notes' }, ...mine.map((x) => h('li', null, `${clock(x.used)} of ${clock(x.allotted)}`, x.over ? `, ${clock(x.over)} over` : `, ${clock(x.left)} left`, x.end === 'chair' ? ', yielded to chair' : x.end === 'questions' ? ', yielded to questions' : '', x.mode === 'mod' ? ', moderated' : ''))) : h('p', { class: 'empty' }, 'None yet.'));
 }
 
+/** Awards: each delegate scored out of 100 from weighted criteria, with one recommendation. Backend only. */
+function perfTab() {
+  const weights = c!.config.weights ?? DEFAULT_WEIGHTS;
+  const rows = evaluate(c!, s, weights);
+  const rec = recommend(rows, s);
+  const total = CRITERIA.reduce((a, k) => a + (Number(weights[k.key]) || 0), 0);
+  const saveWeights = (w: Record<string, number>) => { const n = store.get(id)!; n.config.weights = w; store.put(n); render(); };
+
+  const top = rows.slice(0, 3);
+  const recCard = h('section', { class: 'card rec' }, h('h2', null, 'recommendation'),
+    !rec.enough
+      ? h('p', { class: 'empty' }, 'Not enough yet. Score a delegate, or run some speeches.')
+      : h('div', { class: 'rec-body' },
+          h('div', { class: 'rec-name' }, nameOf(rec.winner!.d)),
+          h('div', { class: 'rec-score' }, `${rec.winner!.total.toFixed(1)} / 100`),
+          rec.reasons.length ? h('p', null, `Strongest on ${rec.reasons.join(' and ').toLowerCase()}.`) : null,
+          rec.close ? h('p', { class: 'flash' }, rec.tied.length > 1 ? `A tie: ${rec.tied.map((r) => nameOf(r.d)).join(', ')}.` : `Close call: ${nameOf(rec.runnerUp!.d)} is within 2 points.`) : null,
+          h('ol', { class: 'runners' }, ...top.map((r) => h('li', null, h('span', null, nameOf(r.d)), h('span', { class: 'muted' }, r.total.toFixed(1))))),
+          btn('Open their feedback', () => { picked = rec.winner!.d; tab = 'delegates'; menu = true; render(); })));
+
+  const weightRows = CRITERIA.map((k) => {
+    const v = Number(weights[k.key]) || 0;
+    const input = h('input', { type: 'number', min: 0, max: 100, step: 5, value: v, inputmode: 'numeric', 'aria-label': `${k.label} weight` }) as HTMLInputElement;
+    input.addEventListener('change', () => saveWeights({ ...weights, [k.key]: Math.max(0, Math.min(100, +input.value || 0)) }));
+    return h('div', { class: 'weight' }, h('div', null, h('strong', null, k.label), h('small', { class: 'muted' }, k.hint)), input, h('span', { class: 'muted share' }, total ? `${Math.round((v / total) * 100)}%` : '0%'));
+  });
+  const presets = h('div', { class: 'btn-row' }, ...Object.values(WEIGHT_PRESETS).map((p) => btn(p.label, () => saveWeights({ ...p.weights }))));
+  const weightsCard = h('section', { class: 'card' }, h('h2', null, 'weights'),
+    h('p', { class: 'muted' }, 'How much each thing counts. Only the proportions matter.'), presets, h('div', { class: 'weights' }, ...weightRows));
+
+  const used = CRITERIA.filter((k) => (Number(weights[k.key]) || 0) > 0);
+  const table = h('div', { class: 'sheet-wrap' }, h('table', { class: 'sheet' },
+    h('thead', null, h('tr', null, h('th', null, '#'), h('th', null, 'Delegate'), h('th', null, 'Score'), ...used.map((k) => h('th', null, k.label)))),
+    h('tbody', null, ...rows.map((r, i) => h('tr', { class: rec.enough && r.d === rec.winner!.d ? 'sel' : '' },
+      h('td', { class: 'num' }, String(i + 1)),
+      h('td', { class: 'name' }, h('button', { type: 'button', class: 'linkish', onclick: () => { picked = r.d; tab = 'delegates'; render(); } }, nameOf(r.d))),
+      h('td', { class: 'num' }, r.total.toFixed(1)),
+      ...used.map((k) => h('td', { class: 'num' }, r.parts.find((p) => p.key === k.key)!.shown)))),
+      rows.length ? null : h('tr', null, h('td', { colspan: 3 + used.length, class: 'empty' }, 'No delegates yet.')))));
+  return h('div', { class: 'stack' }, recCard, h('section', { class: 'card' }, h('h2', null, 'ranking'), table), weightsCard);
+}
+
 function setupTab() {
   const name = h('input', { type: 'text', value: c!.name }) as HTMLInputElement;
   const st = h('input', { type: 'number', value: c!.config.speakTime, min: 5, inputmode: 'numeric' }) as HTMLInputElement;
@@ -408,8 +450,8 @@ function render() {
   s = derive(c);
   drawTools();
   document.title = `${c.name} · BAMUNL Chairing`;
-  const tabs: Array<[Tab, string]> = [['floor', 'Floor'], ['roll', 'Roll call'], ['delegates', 'Feedback'], ['setup', 'Setup']];
-  const body = { floor: floorTab, roll: rollTab, delegates: delegatesTab, setup: setupTab }[tab]();
+  const tabs: Array<[Tab, string]> = [['floor', 'Floor'], ['roll', 'Roll call'], ['delegates', 'Feedback'], ['perf', 'Performance'], ['setup', 'Setup']];
+  const body = { floor: floorTab, roll: rollTab, delegates: delegatesTab, perf: perfTab, setup: setupTab }[tab]();
   const showTabs = menu || tab !== 'floor';
   // Hidden on purpose: feedback, scores and setup shouldn't be readable from across the room.
   mount(app, 
@@ -432,8 +474,11 @@ function tick() {
     clockEl.classList.toggle('out', left <= 0);
     if (barEl) barEl.style.width = `${Math.max(0, Math.min(100, (left / s.speaking.allotted) * 100))}%`;
   } else clockEl.textContent = '';
-  if (capEl && s.mode.kind === 'mod' && s.mode.rr) capEl.textContent = `${s.lists.mod.length} left to speak`;
-  else if (capEl && (s.mode.kind === 'mod' || s.mode.kind === 'unmod')) capEl.textContent = s.mode.startedAt == null ? `${clock(s.mode.total)} · starts with the first speaker` : `${clock(s.mode.total - (now - s.mode.startedAt) / 1000)} left in caucus`;
+  // A moderated caucus counts speeches, not minutes: it is over when the last one is given.
+  if (capEl && s.mode.kind === 'mod') {
+    const cap = modCapacity(s.mode);
+    capEl.textContent = cap === Infinity ? `${s.mode.spoke} given · ${s.lists.mod.length} to go` : `${s.mode.spoke} of ${cap} speeches given`;
+  } else if (capEl && s.mode.kind === 'unmod') capEl.textContent = `${clock(s.mode.total - (now - s.mode.startedAt) / 1000)} left`;
 }
 
 addEventListener('keydown', (e) => {
