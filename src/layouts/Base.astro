@@ -24,7 +24,8 @@ const { title, bare = false } = Astro.props;
     {!bare && (
       <header>
         <div class="wrap bar">
-          <a class="mark" href="/"><img src="/img/logo-168.png" alt="" width="40" height="40" /><span>BAMUNL Chairing</span></a>
+          <a class="mark" href="/"><img src="/img/logo-168.png" alt="" width="40" height="40" /><span class="mark-text">BAMUNL Chairing</span></a>
+          <div id="bar-title" class="bar-title"></div>
           <div id="sync" class="sync" aria-live="polite"></div>
           <div id="bar-tools" class="bar-tools"></div>
         </div>

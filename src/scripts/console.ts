@@ -10,6 +10,7 @@ import { askDelete } from '../lib/guard';
 const id = location.pathname.split('/')[2];
 const app = document.getElementById('app')!;
 const tools = document.getElementById('bar-tools')!;
+const titleBar = document.getElementById('bar-title')!;
 document.body.classList.add('console-body');
 store.migrate();
 type Tab = 'floor' | 'roll' | 'delegates' | 'perf' | 'setup';
@@ -393,11 +394,12 @@ function setupTab() {
 function drawTools() {
   const mates = store.all(c!.conferenceId);
   const list = mates.some((x) => x.id === id) ? mates : [...mates, c!];
-  const sel = h('select', { 'aria-label': 'Committee' }, ...list.map((x) => h('option', { value: x.id }, x.name)), h('option', { value: '__conf' }, 'This conference…'), h('option', { value: '__all' }, 'All conferences…')) as HTMLSelectElement;
+  const sel = h('select', { class: 'title-select', 'aria-label': 'Committee, switch to another' }, ...list.map((x) => h('option', { value: x.id }, x.name)), h('option', { value: '__conf' }, 'This conference…'), h('option', { value: '__all' }, 'All conferences…')) as HTMLSelectElement;
   sel.value = id;
   sel.onchange = () => { location.href = sel.value === '__all' ? '/' : sel.value === '__conf' ? (c!.conferenceId ? `/conf/${c!.conferenceId}` : '/') : `/c/${sel.value}`; };
   const canUndo = effective(c!.events).length > 0;
-  tools.replaceChildren(sel,
+  titleBar.replaceChildren(sel);
+  tools.replaceChildren(
     btn('Undo', () => { const last = effective(store.get(id)!.events).at(-1); if (last) push('undo', { target: last.id }); }, 'btn btn--ghost btn--sm', { disabled: canUndo ? null : true }),
     h('a', { class: 'btn btn--primary btn--sm', href: `/c/${id}/display`, target: 'display' }, 'Open display'),
     // Top right. Click it, or press Enter, and it asks first.
@@ -475,7 +477,7 @@ function render() {
   const showTabs = menu || tab !== 'floor';
   // Hidden on purpose: feedback, scores and setup shouldn't be readable from across the room.
   mount(app, 
-    h('div', { class: 'lead lead--bar' }, c.conferenceId ? h('a', { class: 'crumb', href: `/conf/${c.conferenceId}` }, `← ${store.conf(c.conferenceId)?.name || c.conference || 'Conference'}`) : h('a', { class: 'crumb', href: '/' }, '← All conferences'), h('h1', { class: 'title' }, c.name.toLowerCase())),
+    h('div', { class: 'lead lead--bar' }, c.conferenceId ? h('a', { class: 'crumb', href: `/conf/${c.conferenceId}` }, `← ${store.conf(c.conferenceId)?.name || c.conference || 'Conference'}`) : h('a', { class: 'crumb', href: '/' }, '← All conferences'), h('h1', { class: 'visually-hidden' }, c.name)),
     showTabs ? h('nav', { class: 'tabs', 'aria-label': 'Sections' },
       ...(showTabs ? tabs.map(([k, label]) => h('button', { type: 'button', class: 'tab' + (k === tab ? ' tab--on' : ''), 'aria-current': k === tab ? 'page' : null, onclick: () => { tab = k; menu = k !== 'floor'; if (k !== 'delegates') picked = null; render(); } }, label)) : [])) : null,
 
