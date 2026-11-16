@@ -67,3 +67,14 @@ Date: 2026-11-15. Scope: `mun/chairing/` (live at chair.bamunl.org) and its tabl
 1. Run migrations **16** (and confirm 12 to 15 are in) in the league project.
 2. Make two test subadmins (different clubs) and one conference login, then check by hand: each subadmin sees only their own club; the conference login sees only its conference; deleting a conference locks its login. I can write the script for this if you give me throwaway logins.
 3. Decide on an offline mode (service worker) before a conference with poor wifi.
+
+## Offline mode (added after the report above)
+
+The wifi may drop for a while mid-committee. A service worker (`public/sw.js`) now keeps a copy of every kind of page and its files on the device.
+
+Tested in a production-style build with the network cut: reload the console (speaker and clock intact); pause, resume, stop and start speakers; open the display in a new window; move between pages; add a committee. Also tested with a connection that accepts requests but never answers: the kept page appears after 4 seconds, not a blank screen. When the network returns, pages come from the server first again.
+
+- **Needs to happen once per device, online and signed in:** open the site. It then keeps every page automatically (about 20 files).
+- **What still needs the internet:** signing in or out, deleting (the password check), creating or resetting a conference sign-in, and a committee that was created on another device and has never been opened on this one.
+- **Sent later:** everything done offline is saved on the device and sent when the connection returns (it retries on its own). The header says "Offline · saved on this device · N to send".
+- **Not tested:** the send after reconnecting needs a real login. The logic is unchanged and covered by the earlier tests.

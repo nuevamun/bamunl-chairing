@@ -436,3 +436,14 @@ button.btn, .btn { white-space: nowrap; }
 
 /* long or odd names (up to 120 characters, any script) never break a card */
 .qn, .speaker-name, .past-name, .committee-main strong, .fb-person span, .big-name, .floor-name { overflow-wrap: anywhere; }
+
+/* a paused speaker: the clock dims (console and projector), and the projector says why */
+.clock.paused, .big-clock.paused { opacity: .45; }
+.big-paused { font-weight: 800; letter-spacing: .2em; text-transform: uppercase; color: #ffd166; font-size: clamp(1.1rem, 2.4vw, 2rem); }
+.big-paused[hidden] { display: none; }
+
+/* the sync chip: text, then Sign out, evenly spaced and lined up */
+.sync { display: flex; align-items: center; gap: .75rem; }
+.sync-text { white-space: nowrap; }
+button.sync-out { font: inherit; font-size: .875rem; font-weight: 700; color: var(--twilight); background: none; border: 2px solid var(--rule); border-radius: 999px; padding: .15rem .7rem; cursor: pointer; line-height: 1.4; }
+button.sync-out:hover { border-color: var(--twilight); }

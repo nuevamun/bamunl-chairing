@@ -6,3 +6,6 @@ declare namespace App {
     who: { id: string; kind: 'member' | 'conference'; role: 'admin' | 'school' | null; schoolId: string | null; conferenceId: string | null } | null;
   }
 }
+
+/** The deploy this code came from (set in astro.config.mjs); 'dev' locally. */
+declare const __BUILD__: string;

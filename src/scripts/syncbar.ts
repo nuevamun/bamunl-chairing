@@ -6,14 +6,16 @@ if (location.pathname === '/login') el?.remove();
 onStatus((s) => {
   if (!el) return;
   el.className = 'sync' + (s.state === 'error' ? ' sync--err' : '');
-  el.replaceChildren(...[
-    s.state === 'off' ? 'Saved on this device only'
-    : s.state === 'signed-out' ? h('a', { href: '/login' }, 'Sign in')
+  const text = s.state === 'off' ? 'Saved on this device only'
+    : s.state === 'signed-out' ? null
     : s.state === 'syncing' ? 'Syncing…'
+    : s.state === 'offline' ? `Offline · saved on this device${s.pending ? ` · ${s.pending} to send` : ''}`
     : s.state === 'error' ? `Not synced${s.pending ? ` (${s.pending} waiting)` : ''}: ${s.message ?? ''}`
-    : `${s.pending ? `${s.pending} waiting to send` : 'Synced'} · ${s.who ?? ''}`,
-    s.who ? ' ' : null,
-    s.who ? h('button', { type: 'button', class: 'linkish', onclick: async () => { if (await signOut()) location.href = '/login'; } }, 'Sign out') : null].filter((x) => x != null) as Array<Node | string>);
+    : `${s.pending ? `${s.pending} waiting to send` : 'Synced'} · ${s.who ?? ''}`;
+  el.replaceChildren(...[
+    s.state === 'signed-out' ? h('a', { href: '/login' }, 'Sign in') : h('span', { class: 'sync-text' }, text),
+    s.who ? h('button', { type: 'button', class: 'sync-out', onclick: async () => { if (await signOut()) location.href = '/login'; } }, 'Sign out') : null,
+  ].filter((x) => x != null) as Array<Node | string>);
 });
 startSync();
 

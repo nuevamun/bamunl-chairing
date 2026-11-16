@@ -10,7 +10,7 @@ interface Props { title: string; bare?: boolean }
 const { title, bare = false } = Astro.props;
 ---
 <!doctype html>
-<html lang="en-US">
+<html lang="en-US" data-chairing>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -34,6 +34,7 @@ const { title, bare = false } = Astro.props;
     <script>import "../scripts/nowheel";</script>
     <script>import "../scripts/validity";</script>
     <script>import "../scripts/update";</script>
+    <script>import "../scripts/offline";</script>
     {!bare && <script>import "../scripts/syncbar";</script>}
   </body>
 </html>

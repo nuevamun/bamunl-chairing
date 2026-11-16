@@ -15,7 +15,7 @@ const CLINKED = 'chairing:clinked';    // conferences that exist in the database
 const rd = (k: string): string[] => { try { return JSON.parse(localStorage.getItem(k) ?? '[]'); } catch { return []; } };
 const wr = (k: string, v: string[]) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* ignore */ } };
 
-export type Status = { state: 'off' | 'signed-out' | 'idle' | 'syncing' | 'error'; who?: string; pending: number; message?: string };
+export type Status = { state: 'off' | 'signed-out' | 'idle' | 'syncing' | 'offline' | 'error'; who?: string; pending: number; message?: string };
 let status: Status = { state: supabase ? 'signed-out' : 'off', pending: 0 };
 const fns: Array<(s: Status) => void> = [];
 const set = (p: Partial<Status>) => { status = { ...status, ...p }; fns.forEach((f) => f(status)); };
@@ -67,9 +67,17 @@ const LOCAL_KEYS = [   // 'chairing:recovered' is deliberately not here: it is t
  'chairing:v1', 'chairing:confs:v1', SYNCED, LINKED, CLINKED, 'chairing:meta', 'chairing:cmeta', 'chairing:me', 'chairing:schools', 'chairing:owner'];
 function wipeLocal() { for (const k of LOCAL_KEYS) try { localStorage.removeItem(k); } catch { /* ignore */ } }
 
+/** Did this fail because the network is down or unreachable (as opposed to a real problem on the server)? */
+const isNetwork = (e: unknown) => !navigator.onLine || /failed to fetch|networkerror|network request failed|load failed|fetch failed|timeout|retryable/i.test(String((e as { message?: string; name?: string })?.message ?? '') + String((e as { name?: string })?.name ?? ''));
+let failedAt = 0;      // when the last attempt failed, so a dropped connection isn't hammered
 let running = false;
-export async function sync() {
+export async function sync(force = false) {
   if (!supabase || running) return;
+  if (!navigator.onLine || (!force && Date.now() - failedAt < 5000)) {
+    // No connection. Everything keeps working and is saved on this device; it is sent as soon as the connection is back.
+    if (!navigator.onLine) set({ state: status.state === 'signed-out' ? 'signed-out' : 'offline', pending: unsaved().events });
+    return;
+  }
   const { data } = await supabase.auth.getSession();
   const user = data.session?.user;
   if (!user) return set({ state: 'signed-out', who: undefined, pending: 0 });
@@ -92,7 +100,9 @@ export async function sync() {
     await pushEvents();
     set({ state: 'idle', pending: pendingCount(), message: undefined });
   } catch (e: any) {
-    set({ state: 'error', pending: pendingCount(), message: navigator.onLine ? String(e?.message ?? e) : 'Offline. Changes are kept here and sent when you reconnect.' });
+    failedAt = Date.now();
+    if (isNetwork(e)) set({ state: 'offline', pending: pendingCount(), message: undefined });
+    else set({ state: 'error', pending: pendingCount(), message: String(e?.message ?? e) });
   } finally { running = false; }
 }
 
@@ -279,7 +289,8 @@ export function startSync() {
   let t: number | undefined;
   const later = () => { clearTimeout(t); t = window.setTimeout(sync, 600); };   // events go out almost at once, so another screen sees a pause quickly
   addEventListener('chairing:dirty', () => { set({ pending: pendingCount() }); later(); });
-  addEventListener('online', sync);
+  addEventListener('online', () => { failedAt = 0; sync(true); });
+  addEventListener('offline', () => set({ state: status.state === 'signed-out' ? 'signed-out' : 'offline', pending: unsaved().events }));
   setInterval(sync, 60_000);
   sync();
 }
@@ -287,6 +298,7 @@ export function startSync() {
 /** Checks the signed-in person's password again (for deletes). Returns '' if it's right, otherwise a message. */
 export async function verifyPassword(password: string): Promise<string> {
   if (!supabase) return 'Sign in to delete.';
+  if (!navigator.onLine) return 'Reconnect to the internet to confirm your password.';
   const { data } = await supabase.auth.getSession();
   const email = data.session?.user.email;
   if (!email) return 'Sign in to delete.';
@@ -300,7 +312,7 @@ export async function verifyPassword(password: string): Promise<string> {
  * one it has. Returns false if it couldn't reach the server. The whole picture is refreshed by sync() less often.
  */
 export async function poll(id: string): Promise<boolean> {
-  if (!supabase) return false;
+  if (!supabase || !navigator.onLine) return false;
   const { data: sess } = await supabase.auth.getSession();
   if (!sess.session) return false;
   const c = store.get(id);

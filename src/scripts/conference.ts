@@ -15,7 +15,7 @@ type Login = { user_id: string; username: string; created_at: string };
 let logins: Login[] | null = null;       // null until loaded (or not available)
 let loginMsg = '';
 async function loadLogins() {
-  if (!supabase || session().role === 'conference') return;
+  if (!supabase || !navigator.onLine || session().role === 'conference') return;
   const { data } = await supabase.from('ch_conference_logins').select('user_id, username, created_at').eq('conference_id', id).order('created_at');
   logins = (data as Login[]) ?? []; render();
 }

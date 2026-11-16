@@ -496,6 +496,7 @@ function tick() {
     clockEl.textContent = clock(Math.ceil(left));
     clockEl.classList.toggle('low', left <= 10);
     clockEl.classList.toggle('out', left <= 0);
+    clockEl.classList.toggle('paused', s.speaking.since == null);
     if (barEl) barEl.style.width = `${Math.max(0, Math.min(100, (left / s.speaking.allotted) * 100))}%`;
   } else clockEl.textContent = '';
   // A moderated caucus counts speeches, not minutes: it is over when the last one is given.

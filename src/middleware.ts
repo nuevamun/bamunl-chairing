@@ -19,6 +19,7 @@ export const onRequest = defineMiddleware(async ({ request, cookies, locals, url
     }
   }
 
+  if (url.pathname === '/sw.js') return next();      // the service worker file is public (on Vercel it is served before this runs)
   const open = url.pathname === '/login';
   if (!locals.who && !open) return url.pathname.startsWith('/api/') ? new Response('Sign in first', { status: 401 }) : redirect(`/login?next=${encodeURIComponent(url.pathname + url.search)}`);
   if (locals.who && open) return redirect('/');

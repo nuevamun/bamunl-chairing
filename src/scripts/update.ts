@@ -1,6 +1,5 @@
 // An open tab keeps running the code it loaded, even after a new version is deployed. This checks now and then,
 // and offers a reload when the site has moved on. It never reloads by itself: a chair may be mid-session.
-declare const __BUILD__: string;
 let shown = false;
 async function check() {
   if (shown || __BUILD__ === 'dev') return;

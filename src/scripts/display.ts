@@ -10,6 +10,7 @@ const app = document.getElementById('app')!;
 let c: Committee | undefined = store.get(id);
 
 const clockEl = h('div', { class: 'big-clock', role: 'timer' }, '0:00');
+const pausedEl = h('div', { class: 'big-paused', hidden: true }, 'Paused');
 const barEl = h('div', { class: 'bar-fill' });
 
 function render() {
@@ -33,9 +34,9 @@ function render() {
   if (s.mode.kind === 'voting') {
     kids.push(h('div', { class: 'speaker' }, h('div', { class: 'big-name' }, s.mode.label)));
   } else if (s.mode.kind === 'unmod') {
-    kids.push(h('div', { class: 'speaker' }, h('div', { class: 'big-name' }, 'Unmoderated caucus'), clockEl));
+    kids.push(h('div', { class: 'speaker' }, h('div', { class: 'big-name' }, 'Unmoderated caucus'), clockEl, pausedEl));
   } else if (s.speaking) {
-    kids.push(h('div', { class: 'speaker' }, h('div', { class: 'tag' }, 'Speaking'), h('div', { class: 'big-name' }, name(s.speaking.d)), clockEl, h('div', { class: 'meter' }, barEl)));
+    kids.push(h('div', { class: 'speaker' }, h('div', { class: 'tag' }, 'Speaking'), h('div', { class: 'big-name' }, name(s.speaking.d)), clockEl, pausedEl, h('div', { class: 'meter' }, barEl)));
   } else {
     kids.push(h('div', { class: 'speaker idle' }, h('div', { class: 'big-name' }, '—')));
   }
@@ -55,6 +56,7 @@ function tick() {
   if (s.mode.kind === 'unmod') {
     clockEl.textContent = clock(unmodLeft(s.mode, now));
     clockEl.classList.toggle('paused', s.mode.since == null);
+    pausedEl.hidden = s.mode.since != null;
     return;
   }
   if (!s.speaking) return;
@@ -62,6 +64,8 @@ function tick() {
   clockEl.textContent = clock(Math.ceil(left));
   clockEl.classList.toggle('low', left <= 10);
   clockEl.classList.toggle('out', left <= 0);
+  clockEl.classList.toggle('paused', s.speaking.since == null);
+  pausedEl.hidden = s.speaking.since != null;
   barEl.style.width = `${Math.max(0, Math.min(100, (left / s.speaking.allotted) * 100))}%`;
 }
 
