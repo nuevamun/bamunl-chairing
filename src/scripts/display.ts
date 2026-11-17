@@ -54,9 +54,12 @@ function tick() {
   const now = nowMs();
   if (s.mode.kind === 'voting') return;
   if (s.mode.kind === 'unmod') {
-    clockEl.textContent = clock(unmodLeft(s.mode, now));
+    const left = unmodLeft(s.mode, now);
+    clockEl.textContent = clock(Math.ceil(left));
+    clockEl.classList.toggle('low', left <= 10);
+    clockEl.classList.toggle('out', left <= 0);
     clockEl.classList.toggle('paused', s.mode.since == null);
-    pausedEl.hidden = s.mode.since != null;
+    pausedEl.hidden = s.mode.since != null || left <= 0;
     return;
   }
   if (!s.speaking) return;
@@ -65,7 +68,7 @@ function tick() {
   clockEl.classList.toggle('low', left <= 10);
   clockEl.classList.toggle('out', left <= 0);
   clockEl.classList.toggle('paused', s.speaking.since == null);
-  pausedEl.hidden = s.speaking.since != null;
+  pausedEl.hidden = s.speaking.since != null || left <= 0;
   barEl.style.width = `${Math.max(0, Math.min(100, (left / s.speaking.allotted) * 100))}%`;
 }
 
