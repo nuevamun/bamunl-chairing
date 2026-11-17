@@ -43,7 +43,7 @@ function speakerCard() {
   const list = mode.kind === 'mod' ? s.lists.mod : s.lists.gsl;
   const modeBar = h('div', { class: 'modebar' },
     h('strong', null, mode.kind === 'gsl' ? (s.gslOpen ? 'Speakers list' : 'No speakers list open') : mode.kind === 'mod' && mode.topic ? `${mode.label}: ${mode.topic}` : mode.label),
-    mode.kind !== 'gsl' ? btn(mode.kind === 'voting' ? 'End voting bloc' : mode.kind === 'mod' && mode.rr ? 'End round robin' : 'End caucus', () => push('end_caucus')) : null,
+    mode.kind !== 'gsl' ? btn(mode.kind === 'voting' ? 'End voting bloc' : mode.kind === 'mod' && mode.rr ? 'End round robin' : mode.kind === 'unmod' && mode.timed ? 'End timer' : 'End caucus', () => push('end_caucus')) : null,
     mode.kind === 'unmod' ? (mode.since != null ? btn('Pause', () => push('caucus_pause')) : btn('Resume', () => push('caucus_resume'), 'btn btn--primary btn--sm')) : null,
     capEl);
 

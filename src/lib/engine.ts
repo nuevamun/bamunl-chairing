@@ -80,7 +80,7 @@ export type Conference = { id: string; name: string; /** the club (school) that 
 
 export type Attendance = 'present' | 'pv' | 'absent';
 export type Mode = { kind: 'gsl' } | { kind: 'mod'; total: number; per: number; /** null until the caucus clock starts: with the first speaker, or when the chair starts it */ startedAt: number | null; label: string; /** what the caucus is about */ topic: string; /** who proposed it, and whether they chose to speak first or last ('' = not chosen yet) */ proposer: string; slot: '' | 'first' | 'last' | 'none'; /** when they chose last, they stay at the end of the list */ lastD: string; /** a round robin: everyone present speaks once, no caucus clock */ rr?: boolean; /** speeches finished in this caucus, counted against its limit */ spoke: number }
-  | { kind: 'voting'; startedAt: number; label: string } | { kind: 'unmod'; total: number; startedAt: number; label: string; /** ms already used before the last pause */ acc: number; /** when the clock last started running; null while paused */ since: number | null };
+  | { kind: 'voting'; startedAt: number; label: string } | { kind: 'unmod'; total: number; startedAt: number; label: string; /** ms already used before the last pause */ acc: number; /** when the clock last started running; null while paused */ since: number | null; /** a timed motion that isn't a caucus (suspend, other): just a clock */ timed?: boolean };
 export type Speech = {
   id: string; d: string; allotted: number; used: number; left: number; over: number;
   end: 'done' | 'chair' | 'delegate' | 'questions'; to?: string; mode: 'gsl' | 'mod'; t: number;
@@ -304,6 +304,7 @@ export function derive(c: Committee): State {
           s.lists.mod = all; all.forEach((d) => { s.listed[d] = (s.listed[d] ?? 0) + 1; });
         }
         else if (type?.effect === 'unmod') s.mode = { kind: 'unmod', total: (f.params.total ?? 0) * 60, startedAt: e.t, label: f.label, acc: 0, since: e.t };
+        else if (type?.effect === 'none' && (f.params.time ?? 0) > 0) s.mode = { kind: 'unmod', total: f.params.time * 60, startedAt: e.t, label: f.label, acc: 0, since: e.t, timed: true };
         else if (type?.effect === 'votingbloc') { if (s.speaking) finish(e, 'done'); s.mode = { kind: 'voting', startedAt: e.t, label: 'Voting bloc' }; }   // the room is now IN voting bloc: that's all the screens say
         else if (type?.effect === 'openlist') { if (s.speaking?.mode === 'mod') finish(e, 'done'); s.gslOpen = true; s.mode = { kind: 'gsl' }; }
         else if (type?.effect === 'speaktime') s.speakTime = f.params.per ?? s.speakTime;

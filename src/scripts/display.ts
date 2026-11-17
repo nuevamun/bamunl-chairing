@@ -34,7 +34,7 @@ function render() {
   if (s.mode.kind === 'voting') {
     kids.push(h('div', { class: 'speaker' }, h('div', { class: 'big-name' }, s.mode.label)));
   } else if (s.mode.kind === 'unmod') {
-    kids.push(h('div', { class: 'speaker' }, h('div', { class: 'big-name' }, 'Unmoderated caucus'), clockEl, pausedEl));
+    kids.push(h('div', { class: 'speaker' }, h('div', { class: 'big-name' }, s.mode.timed ? s.mode.label : 'Unmoderated caucus'), clockEl, pausedEl));
   } else if (s.speaking) {
     kids.push(h('div', { class: 'speaker' }, h('div', { class: 'tag' }, 'Speaking'), h('div', { class: 'big-name' }, name(s.speaking.d)), clockEl, pausedEl, h('div', { class: 'meter' }, barEl)));
   } else {
