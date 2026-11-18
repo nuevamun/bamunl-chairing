@@ -103,7 +103,7 @@ test('proposer can speak first, or skip', () => {
 
 test('motion types run most to least disruptive, "other" last; retired ones stay out of the buttons but still read', () => {
   const old = { speakTime: 60, majority: 'simple', motions: [{ key: 'close', label: 'Close the speakers list', effect: 'close', fields: [] }, { key: 'mod', label: 'Moderated caucus', effect: 'mod', fields: [] }, { key: 'custom', label: 'Our own', effect: 'none', fields: [] }] };
-  assert.deepEqual(motionTypes(old).map((m) => m.key), ['votingbloc', 'unmod', 'mod', 'roundrobin', 'openlist', 'custom', 'other']);
+  assert.deepEqual(motionTypes(old).map((m) => m.key), ['votingbloc', 'unmod', 'mod', 'roundrobin', 'openlist', 'speaktime', 'custom', 'other']);
   assert.equal(motionTypes(old).find((m) => m.key === 'mod').label, 'Moderated caucus');
 });
 

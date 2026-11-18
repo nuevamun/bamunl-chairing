@@ -17,7 +17,7 @@ type Tab = 'floor' | 'roll' | 'delegates' | 'perf' | 'setup';
 let tab: Tab = 'floor';
 let amending: string | null = null;   // the proposed motion being amended, if any
 let setupNote = '';                   // a message on the Setup tab, e.g. when a pasted list was too long
-let noteOpen = false;                 // the quick-note box under the speaker is closed until asked for
+let noteDraft = '', noteFor = '';                 // the quick-note box under the speaker is closed until asked for
 let menu = false;                     // the tab row stays out of sight on the Floor until the chair asks for it
 let picked: string | null = null;     // delegate open on the Delegates tab
 let c: Committee | undefined;
@@ -47,16 +47,20 @@ function speakerCard() {
     mode.kind === 'unmod' ? (mode.since != null ? btn('Pause', () => push('caucus_pause')) : btn('Resume', () => push('caucus_resume'), 'btn btn--primary btn--sm')) : null,
     capEl);
 
-  const note = h('input', { type: 'text', placeholder: 'Quick note on this speaker', 'aria-label': 'Quick note on this speaker', autocomplete: 'off' }) as HTMLInputElement;
+  if (noteFor !== (sp?.d ?? '')) { noteFor = sp?.d ?? ''; noteDraft = ''; }   // a draft belongs to the speaker it was started for
+  const note = h('input', { type: 'text', placeholder: 'Note on this speaker, then tap a tag', 'aria-label': 'Note on this speaker', autocomplete: 'off', value: noteDraft }) as HTMLInputElement;
+  note.addEventListener('input', () => { noteDraft = note.value; });
+  // Always open under the speaker. A tag saves the note at once (with just the tag if nothing is typed); Add note saves it untagged.
+  const addNote = (d: string, tag: string) => { const text = note.value.trim() || tag; if (!text) return; noteDraft = ''; push('note', { d, text, tag }); };
   const body = sp
     ? [h('div', { class: 'speaker-name' }, nameOf(sp.d)), spokeText(sp.d) ? h('div', { class: 'muted spoke-line' }, `Already ${spokeText(sp.d)}`) : null, clockEl, h('div', { class: 'meter' }, barEl),
        h('div', { class: 'btn-row' },
          sp.since != null ? btn('Pause', () => push('pause')) : btn('Resume', () => push('resume'), 'btn btn--primary btn--sm'),
          btn('Stop', () => push('stop', { how: 'done' }), 'btn btn--primary btn--sm'),
          btn('Yield to chair', () => push('stop', { how: 'chair' })),
-         btn('Yield to questions', () => push('stop', { how: 'questions' })),
-         btn(noteOpen ? 'Close note' : 'Note', () => { noteOpen = !noteOpen; render(); if (noteOpen) setTimeout(() => (document.querySelector('.inline-note input') as HTMLElement | null)?.focus(), 0); })),
-       noteOpen ? h('form', { class: 'inline-note', onsubmit: (e: Event) => { e.preventDefault(); if (note.value.trim()) { noteOpen = false; push('note', { d: sp.d, text: note.value.trim(), tag: '' }); } } }, note, h('button', { class: 'btn btn--ghost btn--sm' }, 'Add note')) : null]
+         btn('Yield to questions', () => push('stop', { how: 'questions' }))),
+       h('form', { class: 'inline-note', onsubmit: (e: Event) => { e.preventDefault(); addNote(sp.d, ''); } }, note,
+         h('div', { class: 'note-tags' }, ...NOTE_TAGS.map((t) => h('button', { type: 'button', class: 'chip-btn', onclick: () => addNote(sp.d, t) }, t)), h('button', { class: 'btn btn--ghost btn--sm' }, 'Add note')))]
     : [h('div', { class: 'speaker-name muted' }, mode.kind === 'unmod' || mode.kind === 'voting' ? mode.label : 'No one speaking'),
        mode.kind === 'unmod' || mode.kind === 'voting' ? null : h('div', { class: 'btn-row' },
          btn(list.length ? `Start ${nameOf(list[0])}` : 'Start next', () => list[0] && push('start', { d: list[0] }), 'btn btn--primary', { disabled: list.length ? null : true }))];

@@ -37,6 +37,7 @@ export const DEFAULT_CONFIG: Config = {
     { key: 'mod', label: 'Moderated caucus', effect: 'mod', fields: [{ key: 'total', label: 'Total', unit: 'min', def: 10 }, { key: 'per', label: 'Per speaker', unit: 's', def: 60 }] },
     { key: 'roundrobin', label: 'Round robin', effect: 'roundrobin', fields: [{ key: 'per', label: 'Per speaker', unit: 's', def: 45 }] },
     { key: 'openlist', label: 'Open the speakers list', effect: 'openlist', fields: [] },
+    { key: 'speaktime', label: 'Change speaking time', effect: 'speaktime', fields: [{ key: 'per', label: 'Per speaker', unit: 's', def: 60 }] },
     { key: 'other', label: 'Other motion', effect: 'none', fields: [{ key: 'time', label: 'Time', unit: 'min', def: 0 }] },
   ],
 };
@@ -45,7 +46,6 @@ export const DEFAULT_CONFIG: Config = {
 const LEGACY_MOTIONS: MotionType[] = [
   { key: 'suspend', label: 'Suspend the meeting', effect: 'none', fields: [{ key: 'time', label: 'Time', unit: 'min', def: 0 }] },
   { key: 'adjourn', label: 'Adjourn the meeting', effect: 'none', fields: [] },
-  { key: 'speaktime', label: 'Change speaking time', effect: 'speaktime', fields: [{ key: 'per', label: 'Per speaker', unit: 's', def: 45 }] },
   { key: 'close', label: 'Close the speakers list', effect: 'close', fields: [] },
 ];
 

@@ -226,7 +226,8 @@ button.tab:hover, button.tab.tab--on { background: var(--twilight); color: #fff;
 .clock.out { color: #9b1c1c; }
 .meter { height: .65rem; border: 2px solid var(--twilight); border-radius: 999px; background: var(--fog); overflow: hidden; }
 .bar-fill { height: 100%; width: 100%; background: var(--sky); border-radius: 999px; transition: width 250ms linear; }
-.inline-note { display: flex; gap: .5rem; }
+.inline-note { display: grid; gap: .5rem; }
+.note-tags { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
 .queue-list { list-style: none; margin: 1rem 0 0; padding: 0; display: grid; }
 .queue-list li { display: flex; align-items: center; gap: .4rem; padding: .5rem 0; border-top: 1px solid var(--rule); flex-wrap: wrap; }
 .queue-list li:first-child { border-top: 0; }
